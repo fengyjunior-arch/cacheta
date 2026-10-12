@@ -24,7 +24,7 @@ cp android-extra/MainActivity.java "$MA"
 
 etapa "Gerar ícones"
 npx --yes @capacitor/assets@3 generate --android \
-  --iconBackgroundColor '#123629' --iconBackgroundColorDark '#123629' \
+  --iconBackgroundColor '#0a0a0b' --iconBackgroundColorDark '#0a0a0b' \
   || echo "AVISO: não deu para gerar os ícones; o app usa o ícone padrão."
 
 etapa "Numerar a versão"

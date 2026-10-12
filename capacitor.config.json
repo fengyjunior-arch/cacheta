@@ -2,7 +2,7 @@
   "appId": "br.amigos.cacheta",
   "appName": "Cacheta",
   "webDir": "www",
-  "backgroundColor": "#123629",
+  "backgroundColor": "#0a0a0b",
   "android": {
     "allowMixedContent": false
   }
