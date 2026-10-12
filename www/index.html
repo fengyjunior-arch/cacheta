@@ -57,6 +57,19 @@ input.code{text-transform:uppercase;letter-spacing:.3em;font-weight:800;text-ali
 .top .info{flex:1;min-width:0;color:var(--muted);font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .top button{min-height:36px;padding:6px 12px;font-size:.84rem}
 
+/* relógio */
+.clock{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:var(--s1);font-variant-numeric:tabular-nums;font-weight:800;font-size:.9rem;white-space:nowrap}
+.clock::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--o)}
+.clock.off{color:var(--muted);font-weight:600}
+.clock.off::before{background:#6b6b75}
+.clock small{font-weight:600;color:var(--muted);font-size:.7rem}
+.alarm{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:min(92%,520px);z-index:10;background:var(--o);color:var(--o-ink);border-radius:16px;padding:14px 16px;box-shadow:0 12px 30px rgba(0,0,0,.6);display:flex;align-items:center;gap:12px;animation:pop .25s ease-out}
+.alarm b{display:block;font-family:var(--display);font-stretch:115%;font-weight:900;font-size:1.25rem;text-transform:uppercase}
+.alarm span{font-size:.88rem;font-weight:600}
+.alarm button{background:var(--o-ink);color:var(--o);border:0;min-height:40px;margin-left:auto}
+@keyframes pop{from{transform:translate(-50%,-14px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+@media (prefers-reduced-motion:reduce){.alarm{animation:none}}
+
 /* adversários */
 .opps{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .opps::-webkit-scrollbar{display:none}
@@ -201,6 +214,7 @@ button.card:active{background:var(--face)}
 <div class="wrap" id="app"></div>
 <div id="toast" class="toast" hidden></div>
 <div id="drawer" class="drawer" hidden></div>
+<div id="alarm" class="alarm" role="alert" hidden></div>
 
 <script>
 (() => {
@@ -447,6 +461,10 @@ function apply(pid, m){
       if (pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
       Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null});
       break;
+    case "setLimit":
+      if (pid !== PID) fail("Só o anfitrião muda o alerta de tempo.");
+      s.limitMin = Math.max(0, Math.min(600, Math.round(Number(m.min) || 0)));
+      break;
     case "zerar":
       s.wins = {}; s.players.forEach(p => s.wins[p.id] = 0); break;
     case "draw": {
@@ -460,6 +478,7 @@ function apply(pid, m){
         refillStock(s);
         c = s.stock.pop();
       }
+      if (!s.clockStart) s.clockStart = Date.now();   // relógio começa na primeira compra
       s.hands[pid].push(c); s.phase = "discard"; s.drawn = c;
       s.canSwap = !!s.first && m.from !== "lixo";
       s.log = nickOf(s, pid) + (m.from === "lixo" ? " pegou " + cardName(c) + " do lixo." : " comprou do monte.");
@@ -582,6 +601,7 @@ function viewFor(pid){
     canSwap: isTurn(s, pid) && !!s.canSwap,
     hist: s.hist || [],
     claim: s.claim ? {ids: s.claim.ids.slice(), from: s.claim.from} : null,
+    clk: {el: s.clockStart ? Date.now() - s.clockStart : null, lim: s.limitMin || 0},
     result: s.status === "roundEnd" ? s.result : null,
   };
 }
@@ -777,9 +797,57 @@ function leave(){
   if (mode === "host") lsDel("cacheta-host"); else lsDel("cacheta-guest");
   try { peer && peer.destroy(); } catch(e){}
   peer = null; conn = null; conns.clear(); S = null; V = null; mode = "start"; CODE = null; net = "";
+  clockBase = null; clockV = null; lastCycle = null; clockLim = 0;
   history.replaceState(null, "", location.pathname);
   closeDrawer(); render();
 }
+
+/* =================== relógio da mesa (não interfere no jogo) =================== */
+let clockBase = null, clockLim = 0, clockV = null, lastCycle = null, alarmT = null;
+const fmtTime = ms => { const t = Math.max(0, Math.floor(ms/1000)), h = Math.floor(t/3600), m = Math.floor(t%3600/60), sec = t%60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}` : `${m}:${String(sec).padStart(2,"0")}`; };
+function syncClock(){
+  if (!V || !V.clk || V === clockV) return;
+  clockV = V;
+  const lim = V.clk.lim || 0;
+  if (lim !== clockLim) { clockLim = lim; lastCycle = null; }
+  clockBase = V.clk.el == null ? null : Date.now() - V.clk.el;
+}
+function clockHTML(){
+  if (clockBase == null) return `<span class="clock off" id="clock" title="Começa na primeira compra">0:00</span>`;
+  const el = Date.now() - clockBase, limMs = clockLim * 60000;
+  return `<span class="clock" id="clock">${fmtTime(limMs ? el % limMs : el)}${limMs ? ` <small>/ ${clockLim} min</small>` : ""}</span>`;
+}
+function beep(){
+  try {
+    const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
+    const ac = new A(), o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine"; o.frequency.value = 880; o.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(.0001, ac.currentTime); g.gain.exponentialRampToValueAtTime(.3, ac.currentTime + .02);
+    g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + .6);
+    o.start(); o.stop(ac.currentTime + .65); setTimeout(() => ac.close && ac.close(), 900);
+  } catch(e){}
+}
+function showAlarm(cycles){
+  const a = $("#alarm");
+  a.innerHTML = `<div><b>Tempo!</b><span>${fmtTime(cycles * clockLim * 60000)} de mesa. O relógio recomeçou.</span></div><button id="alarmOk">OK</button>`;
+  a.hidden = false;
+  $("#alarmOk").onclick = () => { a.hidden = true; };
+  try { navigator.vibrate && navigator.vibrate([300,150,300]); } catch(e){}
+  beep();
+  clearTimeout(alarmT); alarmT = setTimeout(() => a.hidden = true, 20000);
+}
+setInterval(() => {
+  if (mode === "start" || clockBase == null) return;
+  const el = Date.now() - clockBase, limMs = clockLim * 60000;
+  const c = $("#clock");
+  if (c) c.innerHTML = `${fmtTime(limMs ? el % limMs : el)}${limMs ? ` <small>/ ${clockLim} min</small>` : ""}`;
+  if (limMs) {
+    const cyc = Math.floor(el / limMs);
+    if (lastCycle == null) lastCycle = cyc;          // ao entrar no meio, não avisa ciclos passados
+    else if (cyc > lastCycle) { lastCycle = cyc; showAlarm(cyc); }
+  }
+}, 1000);
 
 /* =================== desenho =================== */
 const myTurn = () => V && V.status === "playing" && V.players[V.turn] && V.players[V.turn].id === V.me;
@@ -817,7 +885,7 @@ function move(dir){
 }
 const inviteLink = () => location.origin + location.pathname + "?mesa=" + CODE;
 const netHTML = () => net ? `<div class="net">${esc(net)}</div>` : "";
-const topHTML = (withHist) => `<div class="top"><span class="brand">Cacheta</span><span class="info">Mesa ${esc(CODE)}${V&&V.round?" · rodada "+V.round:""}</span>${withHist?`<button id="btnHist">Histórico</button>`:""}<button id="btnMenu">Mesa</button></div>`;
+const topHTML = (withHist) => `<div class="top"><span class="brand">Cacheta</span>${V ? clockHTML() : ""}<span class="info">Mesa ${esc(CODE)}${V&&V.round?" · rodada "+V.round:""}</span>${withHist?`<button id="btnHist">Histórico</button>`:""}<button id="btnMenu">Mesa</button></div>`;
 
 function rulesPanel(){
   return `<section class="panel">
@@ -849,6 +917,8 @@ function renderStart(){
       <button class="primary" id="btnJoin">Entrar na mesa ${esc(urlCode)}</button>
       <input type="hidden" id="code" value="${esc(urlCode)}">
     ` : `
+      <label class="muted" for="limit">Alerta de tempo (minutos)</label>
+      <input id="limit" type="number" inputmode="numeric" min="0" max="600" placeholder="Sem alerta" value="${esc(lsGet("cacheta-limit") || "")}">
       <button class="primary" id="btnCreate">Criar mesa nova</button>
       <div class="or">ou entre com o código</div>
       <div class="row"><input id="code" class="code grow" maxlength="5" placeholder="CÓDIGO" autocapitalize="characters" autocomplete="off"><button id="btnJoin">Entrar</button></div>
@@ -885,6 +955,11 @@ function renderLobby(){
     <p class="muted" style="margin:0;font-size:.8rem">Os bots jogam sozinhos, no seu aparelho. Dá para jogar só você contra eles, até sem internet.</p>` : ""}
     <button class="primary" id="btnStart" ${V.players.length<2||!inTable?"disabled":""}>Dar as cartas</button>
     ${V.players.some(p=>p.wins>0) ? `<button id="btnZerar">Zerar placar</button>` : ""}
+  </section>
+  <section class="panel">
+    <h2>Relógio da mesa</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">Começa a contar na primeira compra de carta. ${V.clk && V.clk.lim ? `A cada <b style="color:var(--o)">${V.clk.lim} min</b> aparece um alerta e o relógio recomeça.` : "Sem alerta de tempo."} Não muda nada no jogo.</p>
+    ${mode==="host" ? `<div class="row"><input id="limEdit" class="grow" type="number" inputmode="numeric" min="0" max="600" placeholder="Minutos (vazio = sem alerta)" value="${V.clk && V.clk.lim ? V.clk.lim : ""}"><button id="btnLim">Salvar</button></div>` : ""}
   </section>
   ${rulesPanel()}`;
 }
@@ -1014,6 +1089,7 @@ function renderWaiting(){
   return `${topHTML(false)}<section class="panel" style="text-align:center"><div class="codebig">${esc(CODE)}</div><p>${esc(net || "Conectando…")}</p><button id="btnLeave2">Voltar</button></section>`;
 }
 function render(){
+  syncClock();
   let html;
   if (mode === "start") html = renderStart();
   else if (!V) html = renderWaiting();
@@ -1021,12 +1097,15 @@ function render(){
   else if (V.status === "roundEnd") html = renderEnd();
   else html = renderLobby();
   const keepFocus = document.activeElement && document.activeElement.id;
+  const limitVal = $("#limit") ? $("#limit").value : null, limEdit = $("#limEdit") ? $("#limEdit").value : null;
   const nickVal = $("#nick") ? $("#nick").value : null, codeVal = $("#code") && $("#code").type !== "hidden" ? $("#code").value : null;
   const trailScroll = $("#trail") ? $("#trail").scrollLeft : 0;
   app.innerHTML = html;
   if (nickVal !== null && $("#nick")) $("#nick").value = nickVal;
+  if (limitVal !== null && $("#limit")) $("#limit").value = limitVal;
+  if (limEdit !== null && $("#limEdit") && keepFocus === "limEdit") $("#limEdit").value = limEdit;
   if (codeVal !== null && $("#code") && $("#code").type !== "hidden") $("#code").value = codeVal;
-  if (keepFocus && document.getElementById(keepFocus) && /^(nick|code)$/.test(keepFocus)) document.getElementById(keepFocus).focus();
+  if (keepFocus && document.getElementById(keepFocus) && /^(nick|code|limit|limEdit)$/.test(keepFocus)) document.getElementById(keepFocus).focus();
   if ($("#trail")) $("#trail").scrollLeft = trailScroll;
   bind();
   if (!$("#drawer").hidden && mode !== "start") { if (drawerKind === "hist") openHist(); else if (drawerKind === "menu") openMenu(); }
@@ -1073,6 +1152,7 @@ function openMenu(){
   d.innerHTML = `<div class="sheet" role="dialog" aria-label="Mesa">
     <div class="row" style="justify-content:space-between"><h2>Mesa ${esc(CODE)}</h2><button id="mClose">Fechar</button></div>
     ${V ? `<ul class="plist">${V.players.map(p=>`<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</span><span class="w">${p.wins} vit.</span></li>`).join("")}</ul>` : ""}
+    ${clockBase != null ? `<div class="muted" style="font-size:.88rem">Mesa aberta há <b style="color:var(--text)">${fmtTime(Date.now() - clockBase)}</b>${clockLim ? ` · alerta a cada ${clockLim} min` : ""}</div>` : ""}
     <button id="mCopy">Copiar convite</button>
     ${V && V.status !== "lobby" && inTable ? (confirmReset
       ? `<div class="row"><span class="grow">Encerrar a partida para todos? O placar fica.</span><button class="danger" id="mReset">Encerrar</button><button id="mCancel">Cancelar</button></div>`
@@ -1110,6 +1190,8 @@ function bind(){
   on("#btnCreate", () => {
     if (!readNick()) return;
     const s = emptyState(); s.players.push({id: PID, nick: NICK}); s.wins[PID] = 0;
+    const lim = Math.max(0, Math.min(600, Math.round(Number($("#limit") && $("#limit").value) || 0)));
+    s.limitMin = lim; lsSet("cacheta-limit", lim ? String(lim) : "");
     startHost(newCode(), s);
   });
   on("#btnJoin", () => {
@@ -1130,7 +1212,8 @@ function bind(){
   on("#btnShare", () => navigator.share({title:"Cacheta", text:"Entra na mesa " + CODE, url: inviteLink()}).catch(()=>{}));
   document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { if (b.dataset.rm === V.me && mode === "client") { act("remove", {id:b.dataset.rm}); leave(); } else act("remove", {id:b.dataset.rm}); });
   on("#btnBot", () => act("addBot")); on("#btnBotFill", () => act("addBot", {fill:true}));
-  on("#btnStart", () => act("start")); on("#btnZerar", () => act("zerar")); on("#btnNext", () => act("next"));
+  on("#btnStart", () => act("start"));
+  on("#btnLim", () => { const v = $("#limEdit").value; act("setLimit", {min: v}); toast(Number(v) > 0 ? "Alerta a cada " + Math.round(Number(v)) + " min." : "Alerta de tempo desligado."); }); on("#btnZerar", () => act("zerar")); on("#btnNext", () => act("next"));
   on("#btnMenu", () => { confirmReset = false; confirmLeave = false; openMenu(); });
   on("#btnHist", openHist); on("#btnHist2", openHist); on("#trail", openHist);
   on("#pMonte", () => act("draw", {from:"monte"})); on("#pLixo", () => act("draw", {from:"lixo"}));
