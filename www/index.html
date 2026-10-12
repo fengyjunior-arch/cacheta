@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#123629">
+<title>Mesa de Cacheta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600;6..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+<script src="peerjs.min.js"></script>
+<script>window.Peer||document.write('<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\/script>')</script>
+<style>
+/* Layout: mesa de feltro em tela única para celular — adversários no topo, monte/lixo/vira no centro, sua mão em grade 5×2 embaixo. Tema escuro fixo (feltro), por escolha. */
+:root{
+  --felt:#123629; --felt-hi:#1b4a39; --felt-lo:#0b261d;
+  --ivory:#f7f1e3; --ink:#1c1915;
+  --red:#b4262a; --gold:#e7b44f; --mint:#a9cdbd; --line:rgba(231,180,79,.28);
+  --display:"Bodoni Moda",Georgia,"Times New Roman",serif;
+  --ui:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(120% 80% at 50% 35%,var(--felt-hi),var(--felt) 55%,var(--felt-lo));background-color:var(--felt);background-attachment:fixed;color:var(--ivory);font-family:var(--ui);font-size:15px;-webkit-tap-highlight-color:transparent;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:12px 24px;display:flex;flex-direction:column;gap:14px;min-height:100%}
+h1{font-family:var(--display);font-weight:800;font-size:2.6rem;letter-spacing:.01em;margin:0;line-height:1;text-wrap:balance}
+h2{font-family:var(--display);font-weight:600;font-size:1.4rem;margin:0}
+.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.72rem;color:var(--gold);font-weight:600}
+.muted{color:var(--mint)}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--ivory);padding:10px 14px;font-weight:600;min-height:44px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button.primary{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+button.danger{border-color:rgba(180,38,42,.7);color:#f2b8b5}
+button:disabled{opacity:.4;cursor:not-allowed}
+input{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--ivory);min-height:44px;min-width:0}
+input.code{text-transform:uppercase;letter-spacing:.3em;font-weight:700;text-align:center}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 auto}
+.panel{border:1px solid var(--line);border-radius:14px;padding:14px;background:rgba(0,0,0,.18);display:flex;flex-direction:column;gap:10px}
+.or{display:flex;align-items:center;gap:10px;color:var(--mint);font-size:.8rem;text-transform:uppercase;letter-spacing:.12em}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.top .brand{font-family:var(--display);font-weight:800;font-size:1.35rem}
+.menu-btn{min-height:38px;padding:6px 12px}
+.net{font-size:.8rem;text-align:center;color:var(--gold)}
+.codebig{font-family:var(--display);font-weight:800;font-size:2.4rem;letter-spacing:.18em;color:var(--gold);text-align:center}
+
+.opps{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.opp{flex:1 0 74px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:rgba(0,0,0,.2);display:flex;flex-direction:column;gap:2px;min-width:0}
+.opp .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.85rem}
+.opp .meta{font-size:.74rem;color:var(--mint);font-variant-numeric:tabular-nums}
+.opp.turn{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset;background:rgba(231,180,79,.12)}
+.opp.off{opacity:.5}
+.backs{display:flex;height:14px}
+.backs i{width:9px;height:14px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--red) 0 2px,#7d1a1d 2px 4px);border:1px solid var(--ivory);margin-right:-4px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#5fd38d;margin-right:4px;vertical-align:middle}
+.dot.off{background:#8a8a8a}
+
+.table{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;justify-items:center;padding:6px 0}
+.pile{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;padding:0;min-height:0;border-radius:10px}
+.pile .lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;color:var(--mint);font-weight:600}
+.pile.can .card,.pile.can .back{box-shadow:0 0 0 3px var(--gold),0 6px 14px rgba(0,0,0,.4)}
+.back{width:64px;height:92px;border-radius:8px;border:3px solid var(--ivory);background:repeating-linear-gradient(45deg,var(--red) 0 4px,#7d1a1d 4px 8px);box-shadow:0 6px 14px rgba(0,0,0,.4)}
+.slot{width:64px;height:92px;border-radius:8px;border:2px dashed var(--line)}
+.cor{font-size:.78rem;color:var(--gold);font-weight:600;text-align:center}
+
+.card{position:relative;width:64px;height:92px;border-radius:8px;background:var(--ivory);color:var(--ink);border:1px solid #d8cfbb;box-shadow:0 4px 10px rgba(0,0,0,.35);font-family:var(--display);display:block;padding:0;min-height:0}
+.card.red{color:var(--red)}
+.card .r{position:absolute;top:4px;left:6px;font-weight:800;font-size:1.25rem;line-height:1}
+.card .s1{position:absolute;top:24px;left:7px;font-size:.9rem;line-height:1;font-family:var(--ui)}
+.card .s{position:absolute;right:6px;bottom:4px;font-size:1.9rem;line-height:1;font-family:var(--ui)}
+.card.joker{border:2px solid var(--gold)}
+.card.joker::after{content:"★";position:absolute;top:3px;right:5px;color:#b07d14;font-size:.85rem;font-family:var(--ui)}
+.card.sm{width:42px;height:60px;border-radius:6px}
+.card.sm .r{font-size:.95rem;top:3px;left:4px}
+.card.sm .s1{display:none}
+.card.sm .s{font-size:1.25rem;right:4px;bottom:2px}
+.card.sm.joker::after{font-size:.7rem;top:2px;right:3px}
+
+.status{text-align:center;font-weight:600;min-height:1.4em}
+.status.mine{color:var(--gold)}
+.log{text-align:center;font-size:.8rem;color:var(--mint);min-height:1.2em}
+
+.hand{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;justify-items:center;padding-top:10px}
+.hand .card{width:100%;max-width:68px;aspect-ratio:64/92;height:auto;transition:transform .12s}
+.hand .card.sel{transform:translateY(-10px);box-shadow:0 0 0 3px var(--gold),0 10px 18px rgba(0,0,0,.45)}
+.hand .card.new::before{content:"nova";position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font:600 .62rem var(--ui);color:var(--gold);letter-spacing:.08em;text-transform:uppercase}
+.tools{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+.tools button{min-height:38px;padding:6px 10px;font-size:.85rem}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.actions button{min-height:52px;font-size:1.05rem}
+#btnBater.ready{animation:glow 1.2s ease-in-out infinite alternate}
+@keyframes glow{from{box-shadow:0 0 0 0 rgba(231,180,79,0)}to{box-shadow:0 0 0 6px rgba(231,180,79,.35)}}
+@media (prefers-reduced-motion:reduce){#btnBater.ready{animation:none}.hand .card{transition:none}}
+
+.plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.plist li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.2)}
+.plist li .n{flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plist li .w{font-variant-numeric:tabular-nums;color:var(--gold);font-weight:700}
+.plist li button{min-height:34px;padding:4px 10px;font-size:.8rem}
+.rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;color:#e6dfcf;line-height:1.45}
+.rules b{color:var(--gold)}
+
+.melds{display:flex;flex-direction:column;gap:8px}
+.meld{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.meld .t{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mint);width:76px}
+.score{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.score td{padding:6px 4px;border-bottom:1px solid var(--line)}
+.score td:last-child{text-align:right;color:var(--gold);font-weight:700}
+
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--ivory);border:1px solid var(--gold);padding:10px 16px;border-radius:10px;max-width:calc(100% - 48px);font-weight:600;z-index:9;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+.drawer{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:8}
+.drawer .sheet{background:var(--felt);border-top:2px solid var(--gold);border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:85%;overflow:auto;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="toast" class="toast" hidden></div>
+<div id="drawer" class="drawer" hidden></div>
+
+<script>
+(() => {
+/* =================== cartas e regras =================== */
+const RANKS = "A23456789TJQK", SUITS = "SHDC";
+const SYM = {S:"♠",H:"♥",D:"♦",C:"♣"};
+const rk = c => c[0], st = c => c[1];
+const rv = c => RANKS.indexOf(c[0]) + 1;
+const rlabel = r => r === "T" ? "10" : r;
+const nextRank = r => RANKS[(RANKS.indexOf(r) + 1) % 13];
+const isRed = c => st(c) === "H" || st(c) === "D";
+const cardName = c => rlabel(rk(c)) + SYM[st(c)];
+function rnd(n){ const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=rnd(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function newDeck(){ const d=[]; for(const cp of [1,2]) for(const s of SUITS) for(const r of RANKS) d.push(r+s+cp); return shuffle(d); }
+
+function meldType(cards, cor){
+  const n = cards.length;
+  const nat = cards.filter(c => rk(c) !== cor);
+  if (nat.length === 0) return "coringas";
+  if (nat.every(c => rk(c) === rk(nat[0]))) {
+    const cnt = {}; nat.forEach(c => cnt[st(c)] = (cnt[st(c)]||0) + 1);
+    const vals = Object.values(cnt);
+    if (n === 3 && vals.every(v => v === 1)) return "trinca";
+    if (n === 4 && vals.length <= 3 && vals.every(v => v <= 2) && vals.filter(v => v === 2).length <= 1) return "trinca + 1";
+  }
+  if (nat.every(c => st(c) === st(nat[0]))) {
+    for (let s = 1; s + n - 1 <= 14; s++) {
+      const hi = s + n - 1, used = new Set(); let ok = true;
+      for (const c of nat) {
+        const v = rv(c); let p = null;
+        if (v === 1) { if (s <= 1) p = 1; else if (hi >= 14) p = 14; }
+        else if (v >= s && v <= hi) p = v;
+        if (p === null || used.has(p)) { ok = false; break; }
+        used.add(p);
+      }
+      if (ok) return "sequência";
+    }
+  }
+  return null;
+}
+function findBatida(hand, cor){
+  if (!hand || hand.length !== 10) return null;
+  const idx = [...Array(10).keys()];
+  for (let a=0;a<10;a++) for (let b=a+1;b<10;b++) for (let c=b+1;c<10;c++) for (let d=c+1;d<10;d++){
+    const four = [a,b,c,d].map(i => hand[i]);
+    const t4 = meldType(four, cor); if (!t4) continue;
+    const rest = idx.filter(i => ![a,b,c,d].includes(i)).map(i => hand[i]);
+    for (let i=1;i<6;i++) for (let j=i+1;j<6;j++){
+      const g1 = [rest[0], rest[i], rest[j]];
+      const g2 = rest.filter((_,k) => k!==0 && k!==i && k!==j);
+      const t1 = meldType(g1, cor), t2 = meldType(g2, cor);
+      if (t1 && t2) return [{t:t1,c:g1},{t:t2,c:g2},{t:t4,c:four}];
+    }
+  }
+  return null;
+}
+
+/* =================== utilidades =================== */
+const $ = s => document.querySelector(s);
+const app = $("#app");
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+function lsDel(k){ try { localStorage.removeItem(k); } catch(e){} }
+let toastT;
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,3200); }
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const newCode = () => Array.from({length:5}, () => CODE_CHARS[rnd(CODE_CHARS.length)]).join("");
+const peerIdFor = code => "cacheta-mesa-" + code.toLowerCase();
+const PEER_OPTS = {debug:0, config:{iceServers:[
+  {urls:"stun:stun.l.google.com:19302"},
+  {urls:"stun:stun1.l.google.com:19302"},
+  {urls:"turn:openrelay.metered.ca:80", username:"openrelayproject", credential:"openrelayproject"},
+  {urls:"turn:openrelay.metered.ca:443", username:"openrelayproject", credential:"openrelayproject"},
+  {urls:"turn:openrelay.metered.ca:443?transport=tcp", username:"openrelayproject", credential:"openrelayproject"}
+]}};
+
+let PID = lsGet("cacheta-pid");
+if (!PID) { PID = "p" + Math.random().toString(36).slice(2,10); lsSet("cacheta-pid", PID); }
+let NICK = lsGet("cacheta-nick") || "";
+
+/* =================== estado =================== */
+let mode = "start";        // start | host | client
+let CODE = null;
+let peer = null;
+let S = null;              // estado completo (só no anfitrião)
+const conns = new Map();   // pid -> conexão (anfitrião)
+let conn = null;           // conexão com o anfitrião (convidado)
+let V = null;              // o que este aparelho enxerga
+let net = "";              // aviso de conexão
+let sel = null, order = [], confirmLeave = false, confirmReset = false;
+let lastMsg = 0, retryT = null;
+
+function wakeLock(){ try { navigator.wakeLock && navigator.wakeLock.request("screen").catch(()=>{}); } catch(e){} }
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  wakeLock();
+  if (peer && peer.disconnected && !peer.destroyed) { try { peer.reconnect(); } catch(e){} }
+  if (mode === "client" && !conn) connectClient();
+});
+
+/* =================== anfitrião: regras do jogo =================== */
+function emptyState(){ return {status:"lobby", players:[], wins:{}, round:0}; }
+const pIdx = (s, id) => s.players.findIndex(p => p.id === id);
+const nickOf = (s, id) => (s.players.find(p => p.id === id) || {}).nick || "Alguém";
+function fail(msg){ throw new Error(msg); }
+function deal(s){
+  const deck = newDeck();
+  s.hands = {};
+  s.players.forEach(p => s.hands[p.id] = deck.splice(0,9));
+  s.vira = deck.pop(); s.cor = nextRank(rk(s.vira));
+  s.discard = [deck.pop()]; s.stock = deck;
+  s.turn = (s.dealer + 1) % s.players.length;
+  s.phase = "draw"; s.drawn = null; s.status = "playing"; s.result = null;
+  s.round = (s.round || 0) + 1;
+  s.log = "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas.";
+}
+const isTurn = (s, pid) => s.status === "playing" && s.players[s.turn] && s.players[s.turn].id === pid;
+
+function apply(pid, m){
+  const s = S;
+  switch (m.a) {
+    case "hello": {
+      const nk = String(m.nick || "").trim().slice(0,14) || "Jogador";
+      const i = pIdx(s, pid);
+      if (i >= 0) { s.players[i].nick = nk; break; }
+      if (s.status !== "lobby") break; // entra como espectador
+      if (s.players.length >= 6) fail("A mesa já tem 6 jogadores. Você vai assistir.");
+      s.players.push({id: pid, nick: nk});
+      if (s.wins[pid] == null) s.wins[pid] = 0;
+      break;
+    }
+    case "remove":
+      if (s.status !== "lobby") fail("Só dá para tirar jogadores antes de começar.");
+      if (m.id === PID && pid !== PID) fail("O anfitrião não pode ser tirado.");
+      s.players = s.players.filter(p => p.id !== m.id); break;
+    case "start":
+      if (s.status !== "lobby") return;
+      if (s.players.length < 2) fail("Precisa de pelo menos 2 jogadores.");
+      if (pIdx(s, pid) < 0) fail("Entre na mesa antes de começar.");
+      s.dealer = rnd(s.players.length); deal(s); break;
+    case "next":
+      if (s.status !== "roundEnd") return;
+      s.dealer = (s.dealer + 1) % s.players.length; deal(s); break;
+    case "lobby":
+      if (pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
+      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null});
+      break;
+    case "zerar":
+      s.wins = {}; s.players.forEach(p => s.wins[p.id] = 0); break;
+    case "draw": {
+      if (!isTurn(s, pid) || s.phase !== "draw") fail("Não é hora de comprar.");
+      let c;
+      if (m.from === "lixo") {
+        if (!s.discard.length) fail("O lixo está vazio.");
+        c = s.discard.pop();
+      } else {
+        if (!s.stock.length) {
+          const top = s.discard.pop();
+          s.stock = shuffle(s.discard); s.discard = top ? [top] : [];
+          if (!s.stock.length) fail("Acabaram as cartas do monte.");
+        }
+        c = s.stock.pop();
+      }
+      s.hands[pid].push(c); s.phase = "discard"; s.drawn = c;
+      s.log = nickOf(s, pid) + (m.from === "lixo" ? " pegou " + cardName(c) + " do lixo." : " comprou do monte.");
+      break;
+    }
+    case "discard": {
+      if (!isTurn(s, pid) || s.phase !== "discard") fail("Compre uma carta antes de descartar.");
+      const h = s.hands[pid], i = h.indexOf(m.card);
+      if (i < 0) fail("Essa carta não está na sua mão.");
+      h.splice(i,1); s.discard.push(m.card);
+      s.turn = (s.turn + 1) % s.players.length; s.phase = "draw"; s.drawn = null;
+      s.log = nickOf(s, pid) + " descartou " + cardName(m.card) + ".";
+      break;
+    }
+    case "bater": {
+      if (!isTurn(s, pid) || s.phase !== "discard") fail("Você só bate logo depois de comprar.");
+      const melds = findBatida(s.hands[pid], s.cor);
+      if (!melds) fail("Essas 10 cartas ainda não formam 3 + 3 + 4.");
+      const limpa = !s.hands[pid].some(c => rk(c) === s.cor);
+      s.wins[pid] = (s.wins[pid] || 0) + 1;
+      s.status = "roundEnd"; s.result = {winner: pid, melds, limpa};
+      s.log = nickOf(s, pid) + " bateu!";
+      break;
+    }
+    default: return;
+  }
+  saveHost(); broadcast();
+}
+function hostHandle(pid, m){
+  try { apply(pid, m); }
+  catch (e) { sendErr(pid, e.message || "Não deu certo."); if (pid !== PID) broadcast(); }
+}
+function sendErr(pid, msg){
+  if (pid === PID) { toast(msg); return; }
+  const c = conns.get(pid); if (c && c.open) c.send({t:"err", msg});
+}
+function viewFor(pid){
+  const s = S;
+  const mine = s.hands && s.hands[pid] ? s.hands[pid] : null;
+  return {
+    status: s.status, code: CODE, me: pid, host: PID, round: s.round || 0,
+    dealer: s.dealer, turn: s.turn, phase: s.phase, log: s.log || "",
+    players: s.players.map(p => ({id:p.id, nick:p.nick, wins:s.wins[p.id]||0,
+      count: s.hands && s.hands[p.id] ? s.hands[p.id].length : 0,
+      online: p.id === PID || !!(conns.get(p.id) && conns.get(p.id).open)})),
+    hand: mine ? mine.slice() : null,
+    top: s.discard && s.discard.length ? s.discard[s.discard.length-1] : null,
+    stock: s.stock ? s.stock.length : 0,
+    vira: s.vira || null, cor: s.cor || null,
+    drawn: isTurn(s, pid) ? s.drawn : null,
+    result: s.status === "roundEnd" ? s.result : null,
+  };
+}
+function broadcast(){
+  for (const [pid, c] of conns) if (c.open) { try { c.send({t:"view", v: viewFor(pid)}); } catch(e){} }
+  V = viewFor(PID); render();
+}
+function saveHost(){ lsSet("cacheta-host", JSON.stringify({code: CODE, pid: PID, s: S})); }
+
+/* =================== anfitrião: rede =================== */
+let hostTries = 0;
+function startHost(code, state){
+  mode = "host"; CODE = code; S = state; V = viewFor(PID);
+  history.replaceState(null, "", location.pathname + "?mesa=" + CODE);
+  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock();
+  if (typeof Peer === "undefined") { net = "Sem internet: não consegui carregar a conexão."; render(); return; }
+  peer = new Peer(peerIdFor(CODE), PEER_OPTS);
+  peer.on("open", () => { hostTries = 0; net = ""; render(); });
+  peer.on("connection", c => {
+    c.on("data", d => {
+      if (!d || typeof d !== "object") return;
+      if (d.t === "hello") {
+        const pid = String(d.pid || "").slice(0,24);
+        if (!pid || pid === PID) { c.send({t:"err", msg:"Este aparelho já é o anfitrião."}); return; }
+        const old = conns.get(pid); if (old && old !== c) { try { old.close(); } catch(e){} }
+        c.pid = pid; conns.set(pid, c);
+        hostHandle(pid, {a:"hello", nick:d.nick});
+        broadcast();
+      } else if (d.t === "act" && c.pid && conns.get(c.pid) === c) {
+        hostHandle(c.pid, d);
+      }
+    });
+    c.on("close", () => { if (c.pid && conns.get(c.pid) === c) { conns.delete(c.pid); broadcast(); } });
+    c.on("error", () => {});
+  });
+  peer.on("disconnected", () => { net = "Reconectando ao servidor…"; render(); setTimeout(() => { try { peer.reconnect(); } catch(e){} }, 1500); });
+  peer.on("error", e => {
+    if (e.type === "unavailable-id") {
+      // depois de recarregar, o código antigo pode levar alguns segundos para liberar
+      hostTries++;
+      net = "Reabrindo a mesa " + CODE + "…"; render();
+      try { peer.destroy(); } catch(_){}
+      if (hostTries < 12) setTimeout(() => startHost(CODE, S), 3000);
+      else { net = "Não consegui reabrir a mesa. Crie uma nova."; render(); }
+    } else if (["network","server-error","socket-error","socket-closed"].includes(e.type)) {
+      net = "Sem conexão. Tentando de novo…"; render();
+    }
+  });
+}
+setInterval(() => { if (mode === "host") for (const c of conns.values()) if (c.open) { try { c.send({t:"ping"}); } catch(e){} } }, 5000);
+
+/* =================== convidado: rede =================== */
+function startClient(code){
+  mode = "client"; CODE = code; V = null; net = "Procurando a mesa " + CODE + "…";
+  history.replaceState(null, "", location.pathname + "?mesa=" + CODE);
+  lsSet("cacheta-guest", CODE);
+  render(); wakeLock();
+  if (typeof Peer === "undefined") { net = "Sem internet: não consegui carregar a conexão."; render(); return; }
+  peer = new Peer(PEER_OPTS);
+  peer.on("open", () => connectClient());
+  peer.on("disconnected", () => { setTimeout(() => { try { peer.reconnect(); } catch(e){} }, 1500); });
+  peer.on("error", e => {
+    if (e.type === "peer-unavailable") { net = V ? "O anfitrião saiu. Esperando ele voltar…" : "Mesa " + CODE + " não encontrada. Confira o código; tentando de novo…"; render(); scheduleRetry(); }
+    else if (["network","server-error","socket-error","socket-closed"].includes(e.type)) { net = "Sem conexão. Tentando de novo…"; render(); scheduleRetry(); }
+  });
+}
+function scheduleRetry(){
+  if (retryT || mode !== "client") return;
+  retryT = setTimeout(() => { retryT = null; connectClient(); }, 3000);
+}
+function connectClient(){
+  if (mode !== "client" || !peer || peer.destroyed) return;
+  if (peer.disconnected) { try { peer.reconnect(); } catch(e){} scheduleRetry(); return; }
+  if (conn && conn.open) return;
+  const c = peer.connect(peerIdFor(CODE), {reliable:true, serialization:"json"});
+  let opened = false;
+  c.on("open", () => {
+    opened = true; conn = c; lastMsg = Date.now();
+    c.send({t:"hello", pid:PID, nick:NICK});
+    net = ""; render();
+  });
+  c.on("data", d => {
+    lastMsg = Date.now();
+    if (!d || typeof d !== "object") return;
+    if (d.t === "view") { V = d.v; render(); }
+    else if (d.t === "err") toast(d.msg);
+  });
+  c.on("close", () => { if (conn === c) { conn = null; net = "Conexão caiu. Reconectando…"; render(); scheduleRetry(); } });
+  c.on("error", () => {});
+  setTimeout(() => { if (!opened) { try { c.close(); } catch(e){} scheduleRetry(); } }, 9000);
+}
+setInterval(() => {
+  if (mode === "client" && conn && Date.now() - lastMsg > 16000) {
+    const c = conn; conn = null; try { c.close(); } catch(e){}
+    net = "Conexão caiu. Reconectando…"; render(); scheduleRetry();
+  }
+}, 4000);
+
+/* =================== ações deste aparelho =================== */
+function act(a, extra){
+  const m = Object.assign({a}, extra || {});
+  if (mode === "host") hostHandle(PID, m);
+  else if (conn && conn.open) conn.send(Object.assign({t:"act"}, m));
+  else toast("Sem conexão com a mesa no momento.");
+}
+function leave(){
+  if (mode === "host") lsDel("cacheta-host"); else lsDel("cacheta-guest");
+  try { peer && peer.destroy(); } catch(e){}
+  peer = null; conn = null; conns.clear(); S = null; V = null; mode = "start"; CODE = null; net = "";
+  history.replaceState(null, "", location.pathname);
+  $("#drawer").hidden = true; render();
+}
+
+/* =================== desenho =================== */
+const myTurn = () => V && V.status === "playing" && V.players[V.turn] && V.players[V.turn].id === V.me;
+const nk = id => { const p = V.players.find(p => p.id === id); return p ? p.nick : "Alguém"; };
+function cardHTML(c, cls){
+  if (!c) return '<div class="slot"></div>';
+  const j = V && V.cor && rk(c) === V.cor;
+  return `<span class="card ${isRed(c)?"red":""} ${j?"joker":""} ${cls||""}" aria-label="${cardName(c)}${j?" (coringa)":""}"><span class="r">${rlabel(rk(c))}</span><span class="s1">${SYM[st(c)]}</span><span class="s">${SYM[st(c)]}</span></span>`;
+}
+function cardBtn(c, cls){
+  const j = V.cor && rk(c) === V.cor;
+  return `<button class="card ${isRed(c)?"red":""} ${j?"joker":""} ${cls||""}" data-card="${c}" aria-label="${cardName(c)}${j?" (coringa)":""}" aria-pressed="${sel===c}"><span class="r">${rlabel(rk(c))}</span><span class="s1">${SYM[st(c)]}</span><span class="s">${SYM[st(c)]}</span></button>`;
+}
+function syncOrder(hand){
+  hand = hand || [];
+  order = order.filter(c => hand.includes(c));
+  hand.forEach(c => { if (!order.includes(c)) order.push(c); });
+  if (sel && !hand.includes(sel)) sel = null;
+}
+function sortBy(how){
+  const key = c => { const j = rk(c) === V.cor ? 1 : 0; return how === "naipe" ? [j, SUITS.indexOf(st(c)), rv(c)] : [j, rv(c), SUITS.indexOf(st(c))]; };
+  order.sort((a,b) => { const ka=key(a), kb=key(b); for (let i=0;i<3;i++) if (ka[i]!==kb[i]) return ka[i]-kb[i]; return 0; });
+  render();
+}
+function move(dir){
+  if (!sel) { toast("Toque numa carta para escolher qual mover."); return; }
+  const i = order.indexOf(sel), j = i + dir;
+  if (j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]]; render();
+}
+const IS_APP = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const inviteLink = () => location.origin + location.pathname + "?mesa=" + CODE;
+const netHTML = () => net ? `<div class="net">${esc(net)}</div>` : "";
+const topHTML = () => `<div class="top"><span class="brand">Cacheta</span><span class="muted">Mesa ${esc(CODE)}${V&&V.round?" · rodada "+V.round:""}</span><button class="menu-btn" id="btnMenu">Mesa</button></div>`;
+
+function renderStart(){
+  const params = new URLSearchParams(location.search);
+  const urlCode = (params.get("mesa") || "").toUpperCase();
+  let saved = null; try { saved = JSON.parse(lsGet("cacheta-host") || "null"); } catch(e){}
+  const guest = lsGet("cacheta-guest");
+  return `
+  <div><div class="eyebrow">Mesa entre amigos · até 6</div><h1>Cacheta</h1></div>
+  <section class="panel">
+    <label class="muted" for="nick">Seu apelido</label>
+    <input id="nick" maxlength="14" placeholder="Ex.: Juninho" value="${esc(NICK)}" autocomplete="nickname">
+    ${urlCode ? `
+      <button class="primary" id="btnJoin">Entrar na mesa ${esc(urlCode)}</button>
+      <input type="hidden" id="code" value="${esc(urlCode)}">
+    ` : `
+      <button class="primary" id="btnCreate">Criar mesa nova</button>
+      <div class="or">ou entre com o código</div>
+      <div class="row"><input id="code" class="code grow" maxlength="5" placeholder="CÓDIGO" autocapitalize="characters" autocomplete="off"><button id="btnJoin">Entrar</button></div>
+    `}
+    ${saved && saved.code ? `<button id="btnResume">Voltar à minha mesa ${esc(saved.code)} (anfitrião)</button>` : ""}
+    ${!urlCode && guest && (!saved || saved.code !== guest) ? `<button id="btnRejoin">Voltar à mesa ${esc(guest)}</button>` : ""}
+  </section>
+  <section class="panel">
+    <h2>Como funciona</h2>
+    <ul class="rules">
+      <li>Quem cria a mesa vira o <b>anfitrião</b>: a partida roda no celular dele, que precisa ficar com o app aberto e a tela ligada.</li>
+      <li>Os outros entram pelo <b>link</b> ou pelo <b>código</b> de 5 letras. Ninguém precisa de conta.</li>
+      <li>Cada um vê só as próprias cartas.</li>
+    </ul>
+  </section>
+  ${rulesPanel()}`;
+}
+function rulesPanel(){
+  return `<section class="panel">
+    <h2>Regras desta mesa</h2>
+    <ul class="rules">
+      <li>2 baralhos, <b>9 cartas</b> para cada um. A <b>vira</b> define o coringa: a carta seguinte a ela (vira 5 → coringa 6; vira K → coringa Ás).</li>
+      <li>Na sua vez, compre do <b>monte</b> ou pegue a carta de cima do <b>lixo</b>, e descarte uma.</li>
+      <li>Para <b>bater</b>, logo depois de comprar, as 10 cartas precisam formar <b>3 + 3 + 4</b>. Vale bater com a carta do lixo.</li>
+      <li><b>Trinca</b>: 3 do mesmo valor e naipes diferentes. <b>Sequência</b>: mesmo naipe, cartas seguidas; Ás vale A-2-3 e Q-K-A, nunca K-A-2.</li>
+      <li>Jogo de 4 com cartas iguais: trinca de naipes diferentes <b>mais uma repetida</b> (7♠ 7♥ 7♦ 7♠). Quatro naipes diferentes não vale.</li>
+      <li>Cada batida vale <b>1 vitória</b> no placar.</li>
+    </ul>
+  </section>`;
+}
+function renderLobby(){
+  const inTable = V.players.some(p => p.id === V.me);
+  return `
+  ${topHTML()}
+  ${netHTML()}
+  <section class="panel">
+    <div class="eyebrow" style="text-align:center">Código da mesa</div>
+    <div class="codebig">${esc(CODE)}</div>
+    <div class="row"><button class="grow" id="btnCopy">Copiar convite</button>${navigator.share&&!IS_APP?`<button class="grow" id="btnShare">Compartilhar</button>`:""}</div>
+    <div class="muted" style="font-size:.8rem;text-align:center;word-break:break-all">${IS_APP?"Seus amigos abrem o app, tocam em Entrar e digitam este código.":esc(inviteLink())}</div>
+  </section>
+  <section class="panel">
+    <div class="row" style="justify-content:space-between"><h2>Na mesa</h2><span class="muted">${V.players.length}/6</span></div>
+    <ul class="plist">${V.players.map(p => `<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
+    ${!inTable ? `<p class="muted" style="margin:0">A mesa está cheia ou a partida já começou. Você está assistindo.</p>` : ""}
+    <button class="primary" id="btnStart" ${V.players.length<2||!inTable?"disabled":""}>Dar as cartas</button>
+    ${V.players.some(p=>p.wins>0) ? `<button id="btnZerar">Zerar placar</button>` : ""}
+  </section>
+  ${rulesPanel()}`;
+}
+function oppsHTML(){
+  const n = V.players.length, me = V.players.findIndex(p => p.id === V.me);
+  const start = me >= 0 ? me : 0;
+  let out = "";
+  for (let k=0;k<n;k++){
+    const i = (start + k) % n, p = V.players[i];
+    out += `<div class="opp ${V.status==="playing"&&V.turn===i?"turn":""} ${p.online?"":"off"}">
+      <span class="nm">${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</span>
+      <span class="backs">${'<i></i>'.repeat(Math.min(p.count,10))}</span>
+      <span class="meta">${p.count} cartas · ${p.wins} vit.${i===V.dealer?" · deu":""}${p.online?"":" · offline"}</span></div>`;
+  }
+  return `<div class="opps">${out}</div>`;
+}
+function renderGame(){
+  const meIn = !!V.hand;
+  const mine = myTurn();
+  syncOrder(V.hand);
+  const canDraw = mine && V.phase === "draw";
+  const bat = mine && V.phase === "discard" ? findBatida(V.hand, V.cor) : null;
+  const who = esc(nk(V.players[V.turn].id));
+  let status;
+  if (!meIn) status = `Você está assistindo. Vez de ${who}.`;
+  else if (mine && V.phase === "draw") status = "Sua vez: compre do monte ou pegue do lixo.";
+  else if (mine) status = bat ? "Dá para bater! Toque em Bater." : "Escolha uma carta e descarte.";
+  else status = `Vez de ${who}.`;
+  return `
+  ${topHTML()}
+  ${netHTML()}
+  ${oppsHTML()}
+  <div class="table">
+    <button class="pile ${canDraw?"can":""}" id="pMonte" ${canDraw?"":"disabled"} aria-label="Comprar do monte"><div class="back"></div><span class="lbl">Monte · ${V.stock}</span></button>
+    <button class="pile ${canDraw&&V.top?"can":""}" id="pLixo" ${canDraw&&V.top?"":"disabled"} aria-label="Pegar do lixo">${cardHTML(V.top)}<span class="lbl">Lixo</span></button>
+    <div class="pile">${cardHTML(V.vira,"sm")}<span class="cor">Coringa: ${rlabel(V.cor)}</span></div>
+  </div>
+  <div class="status ${mine?"mine":""}">${status}</div>
+  <div class="log">${esc(V.log)}</div>
+  ${meIn ? `
+  <div class="hand" id="hand">${order.map(c => cardBtn(c, (c===sel?"sel ":"") + (c===V.drawn?"new":""))).join("")}</div>
+  <div class="tools">
+    <button id="sNaipe">Ordenar por naipe</button><button id="sValor">Ordenar por valor</button>
+    <button id="mvL" aria-label="Mover carta para a esquerda">◀</button><button id="mvR" aria-label="Mover carta para a direita">▶</button>
+  </div>
+  <div class="actions">
+    <button id="btnDesc" ${mine&&V.phase==="discard"&&sel?"":"disabled"}>Descartar${sel?" "+cardName(sel):""}</button>
+    <button id="btnBater" class="primary ${bat?"ready":""}" ${bat?"":"disabled"}>Bater</button>
+  </div>` : ""}`;
+}
+function renderEnd(){
+  const r = V.result;
+  const rows = [...V.players].sort((a,b) => b.wins - a.wins);
+  const nextDealer = V.players[(V.dealer+1) % V.players.length];
+  const inTable = V.players.some(p => p.id === V.me);
+  return `
+  ${topHTML()}
+  ${netHTML()}
+  <section class="panel">
+    <div class="eyebrow">Fim da rodada</div>
+    <h1 style="font-size:2rem">${esc(nk(r.winner))} bateu${r.limpa?" limpo":""}!</h1>
+    <div class="melds">${r.melds.map(m => `<div class="meld"><span class="t">${m.t}</span>${m.c.map(c=>cardHTML(c,"sm")).join("")}</div>`).join("")}</div>
+    <div class="muted" style="font-size:.85rem">Vira ${cardName(V.vira)} · coringa ${rlabel(V.cor)}</div>
+  </section>
+  <section class="panel">
+    <h2>Placar</h2>
+    <table class="score">${rows.map(p=>`<tr><td>${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</td><td>${p.wins}</td></tr>`).join("")}</table>
+    ${inTable ? `<button class="primary" id="btnNext">Próxima rodada · ${esc(nextDealer.nick)} dá as cartas</button>` : ""}
+  </section>`;
+}
+function renderWaiting(){
+  return `${topHTML()}<section class="panel" style="text-align:center"><div class="codebig">${esc(CODE)}</div><p>${esc(net || "Conectando…")}</p><button id="btnLeave2">Voltar</button></section>`;
+}
+function render(){
+  let html;
+  if (mode === "start") html = renderStart();
+  else if (!V) html = renderWaiting();
+  else if (V.status === "playing") html = renderGame();
+  else if (V.status === "roundEnd") html = renderEnd();
+  else html = renderLobby();
+  const keepFocus = document.activeElement && document.activeElement.id;
+  const nickVal = $("#nick") ? $("#nick").value : null, codeVal = $("#code") && $("#code").type !== "hidden" ? $("#code").value : null;
+  app.innerHTML = html;
+  if (nickVal !== null && $("#nick")) $("#nick").value = nickVal;
+  if (codeVal !== null && $("#code") && $("#code").type !== "hidden") $("#code").value = codeVal;
+  if (keepFocus && document.getElementById(keepFocus) && /^(nick|code)$/.test(keepFocus)) document.getElementById(keepFocus).focus();
+  bind();
+  if (!$("#drawer").hidden && mode !== "start") openMenu();
+}
+function openMenu(){
+  const d = $("#drawer");
+  const isHost = mode === "host";
+  const inTable = V && V.players.some(p => p.id === V.me);
+  d.innerHTML = `<div class="sheet" role="dialog" aria-label="Mesa">
+    <div class="row" style="justify-content:space-between"><h2>Mesa ${esc(CODE)}</h2><button id="mClose">Fechar</button></div>
+    ${V ? `<ul class="plist">${V.players.map(p=>`<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</span><span class="w">${p.wins} vit.</span></li>`).join("")}</ul>` : ""}
+    <div class="row"><button class="grow" id="mCopy">Copiar convite</button></div>
+    ${V && V.status !== "lobby" && inTable ? (confirmReset
+      ? `<div class="row"><span class="grow">Encerrar a partida para todos? O placar fica.</span><button class="danger" id="mReset">Encerrar</button><button id="mCancel">Cancelar</button></div>`
+      : `<button class="danger" id="mAsk">Encerrar partida e voltar ao lobby</button>`) : ""}
+    ${confirmLeave
+      ? `<div class="row"><span class="grow">${isHost ? "Fechar a mesa? Todo mundo será desconectado." : "Sair desta mesa?"}</span><button class="danger" id="mLeave">Sair</button><button id="mCancel2">Cancelar</button></div>`
+      : `<button id="mAskLeave">${isHost ? "Fechar a mesa" : "Sair da mesa"}</button>`}
+    <p class="muted" style="margin:0;font-size:.82rem">${isHost ? "Você é o anfitrião: mantenha esta página aberta e a tela ligada enquanto jogam." : "Se a conexão cair, a página tenta voltar sozinha."}</p>
+  </div>`;
+  d.hidden = false;
+  const close = () => { d.hidden = true; confirmReset = false; confirmLeave = false; };
+  $("#mClose").onclick = close;
+  d.onclick = e => { if (e.target === d) close(); };
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("#mCopy", copyInvite);
+  on("#mAsk", () => { confirmReset = true; openMenu(); });
+  on("#mCancel", () => { confirmReset = false; openMenu(); });
+  on("#mReset", () => { close(); act("lobby"); });
+  on("#mAskLeave", () => { confirmLeave = true; openMenu(); });
+  on("#mCancel2", () => { confirmLeave = false; openMenu(); });
+  on("#mLeave", () => { close(); leave(); });
+}
+function copyInvite(){
+  const txt = IS_APP ? "Bora jogar cacheta! Abre o app e entra na mesa " + CODE : "Bora jogar cacheta! Entra na mesa " + CODE + ": " + inviteLink();
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(() => toast("Convite copiado. Cole no WhatsApp."), () => toast("Código da mesa: " + CODE));
+  else toast("Código da mesa: " + CODE);
+}
+function readNick(){
+  const v = ($("#nick") ? $("#nick").value : NICK).trim().slice(0,14);
+  if (!v) { toast("Digite seu apelido."); if ($("#nick")) $("#nick").focus(); return null; }
+  NICK = v; lsSet("cacheta-nick", v); return v;
+}
+function bind(){
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("#btnCreate", () => {
+    if (!readNick()) return;
+    const s = emptyState(); s.players.push({id: PID, nick: NICK}); s.wins[PID] = 0;
+    startHost(newCode(), s);
+  });
+  on("#btnJoin", () => {
+    if (!readNick()) return;
+    const code = ($("#code").value || "").trim().toUpperCase();
+    if (code.length !== 5) { toast("O código tem 5 letras."); return; }
+    let saved = null; try { saved = JSON.parse(lsGet("cacheta-host") || "null"); } catch(e){}
+    if (saved && saved.code === code) { startHost(code, saved.s); return; }
+    startClient(code);
+  });
+  on("#btnResume", () => {
+    let saved = null; try { saved = JSON.parse(lsGet("cacheta-host") || "null"); } catch(e){}
+    if (saved) { readNick(); const me = saved.s.players.find(p => p.id === PID); if (me && NICK) me.nick = NICK; startHost(saved.code, saved.s); }
+  });
+  on("#btnRejoin", () => { if (!readNick()) return; startClient(lsGet("cacheta-guest")); });
+  on("#btnLeave2", leave);
+  on("#btnCopy", copyInvite);
+  on("#btnShare", () => navigator.share({title:"Mesa de Cacheta", text:"Entra na mesa " + CODE, url: inviteLink()}).catch(()=>{}));
+  document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { if (b.dataset.rm === V.me && mode === "client") { act("remove", {id:b.dataset.rm}); leave(); } else act("remove", {id:b.dataset.rm}); });
+  on("#btnStart", () => act("start")); on("#btnZerar", () => act("zerar")); on("#btnNext", () => act("next"));
+  on("#btnMenu", () => { confirmReset = false; confirmLeave = false; openMenu(); });
+  on("#pMonte", () => act("draw", {from:"monte"})); on("#pLixo", () => act("draw", {from:"lixo"}));
+  on("#sNaipe", () => sortBy("naipe")); on("#sValor", () => sortBy("valor"));
+  on("#mvL", () => move(-1)); on("#mvR", () => move(1));
+  on("#btnDesc", () => { if (sel) { const c = sel; sel = null; act("discard", {card:c}); } });
+  on("#btnBater", () => act("bater"));
+  const h = $("#hand");
+  if (h) h.onclick = e => { const b = e.target.closest("[data-card]"); if (!b) return; sel = sel === b.dataset.card ? null : b.dataset.card; render(); };
+  const code = $("#code"); if (code && code.type !== "hidden") code.onkeydown = e => { if (e.key === "Enter") $("#btnJoin").click(); };
+}
+
+/* =================== início =================== */
+(function boot(){
+  const urlCode = (new URLSearchParams(location.search).get("mesa") || "").toUpperCase();
+  let saved = null; try { saved = JSON.parse(lsGet("cacheta-host") || "null"); } catch(e){}
+  if (urlCode && saved && saved.code === urlCode && saved.pid === PID) { startHost(urlCode, saved.s); return; }
+  if (urlCode && NICK && lsGet("cacheta-guest") === urlCode) { startClient(urlCode); return; }
+  render();
+})();
+})();
+</script>
+</body>
+</html>
