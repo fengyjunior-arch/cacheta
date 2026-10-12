@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   apk:
@@ -23,48 +24,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Instalar dependências
-        run: npm install
-
-      - name: Embutir a biblioteca de conexão no app
-        run: cp node_modules/peerjs/dist/peerjs.min.js www/
-
-      - name: Criar projeto Android
-        run: npx cap add android
-
-      - name: Manter a tela ligada durante o jogo
-        run: cp android-extra/MainActivity.java android/app/src/main/java/br/amigos/cacheta/MainActivity.java
-
-      - name: Gerar ícones
-        continue-on-error: true
-        run: npx @capacitor/assets generate --android --iconBackgroundColor '#123629' --iconBackgroundColorDark '#123629'
-
-      - name: Numerar a versão
-        run: |
-          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
-          sed -i "s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
-
-      - name: Sincronizar
-        run: npx cap sync android
-
-      - name: Compilar
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
-
-      - name: Assinar o APK
-        run: |
-          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
-          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk alinhado.apk
-          "$BT/apksigner" sign \
-            --ks keystore/cacheta.p12 --ks-type PKCS12 \
-            --ks-pass pass:cacheta-amigos --key-pass pass:cacheta-amigos \
-            --ks-key-alias cacheta \
-            --out Cacheta.apk alinhado.apk
-          "$BT/apksigner" verify Cacheta.apk
+      - name: Compilar o app
+        shell: bash
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: bash ci/build.sh 2>&1 | tee build.log
 
       - name: Publicar para download
         uses: softprops/action-gh-release@v2
@@ -73,3 +37,18 @@ jobs:
           name: Cacheta 1.${{ github.run_number }}
           files: Cacheta.apk
           make_latest: true
+
+      - name: Registrar o erro num issue
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Falha na execução #${{ github.run_number }} (commit ${{ github.sha }})."
+            echo
+            echo '```'
+            if [ -f build.log ]; then tail -c 60000 build.log; else echo "A falha aconteceu antes da compilação (preparação do ambiente)."; fi
+            echo '```'
+          } > erro.md
+          gh issue create --repo "${{ github.repository }}" --title "Erro na compilação #${{ github.run_number }}" --body-file erro.md
