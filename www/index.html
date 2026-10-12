@@ -166,6 +166,7 @@ button.card:active{background:var(--face)}
 .plist li .n{flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plist li .w{font-variant-numeric:tabular-nums;color:var(--o);font-weight:800}
 .plist li button{min-height:32px;padding:4px 10px;font-size:.78rem}
+.bt{display:inline-block;font:800 .55rem var(--ui);letter-spacing:.08em;color:var(--o);border:1px solid rgba(255,122,26,.5);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:2px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;flex:0 0 auto}
 .dot.off{background:#6b6b75}
 .rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:7px;color:#d8d8dd;line-height:1.45}
@@ -413,6 +414,20 @@ function apply(pid, m){
       if (s.wins[pid] == null) s.wins[pid] = 0;
       break;
     }
+    case "addBot": {
+      if (pid !== PID) fail("Só o anfitrião pode adicionar bots.");
+      if (s.status !== "lobby") fail("Só dá para adicionar bots antes de começar.");
+      const qtd = m.fill ? 6 - s.players.length : 1;
+      if (qtd <= 0 || s.players.length >= 6) fail("A mesa já tem 6 jogadores.");
+      for (let k = 0; k < qtd; k++) {
+        const usados = new Set(s.players.map(p => p.nick));
+        const nome = BOT_NAMES.find(n => !usados.has(n)) || ("Bot " + (s.players.length + 1));
+        const id = "bot-" + Math.random().toString(36).slice(2,8);
+        s.players.push({id, nick: nome, bot: true});
+        s.wins[id] = s.wins[id] || 0;
+      }
+      break;
+    }
     case "remove":
       if (s.status !== "lobby") fail("Só dá para tirar jogadores antes de começar.");
       if (m.id === PID && pid !== PID) fail("O anfitrião não pode ser tirado.");
@@ -500,9 +515,9 @@ function viewFor(pid){
   return {
     status: s.status, code: CODE, me: pid, host: PID, round: s.round || 0,
     dealer: s.dealer, turn: s.turn, phase: s.phase, log: s.log || "",
-    players: s.players.map(p => ({id:p.id, nick:p.nick, wins:s.wins[p.id]||0,
+    players: s.players.map(p => ({id:p.id, nick:p.nick, bot:!!p.bot, wins:s.wins[p.id]||0,
       count: s.hands && s.hands[p.id] ? s.hands[p.id].length : 0,
-      online: p.id === PID || !!(conns.get(p.id) && conns.get(p.id).open)})),
+      online: p.bot || p.id === PID || !!(conns.get(p.id) && conns.get(p.id).open)})),
     hand: mine ? mine.slice() : null,
     top: s.discard && s.discard.length ? s.discard[s.discard.length-1] : null,
     stock: s.stock ? s.stock.length : 0,
@@ -513,9 +528,69 @@ function viewFor(pid){
     result: s.status === "roundEnd" ? s.result : null,
   };
 }
+/* ---------- bots (jogam no aparelho do anfitrião) ---------- */
+const BOT_NAMES = ["Bot Zé","Bot Tina","Bot Dito","Bot Lia","Bot Juca","Bot Nena"];
+const BOT_DELAY = window.__botDelay || 1100;
+let botTimer = null;
+function handScore(h, Jk){
+  let sc = 0;
+  for (const g of groupHand(h, Jk)) {
+    if (g.kind === "jogo") sc += g.cards.length * 3;
+    else if (g.kind === "par") sc += 2;
+    else if (g.kind === "coringa") sc += 2.5;
+  }
+  return sc;
+}
+function bestDiscard(h, Jk, keep){
+  let best = null, bs = -Infinity;
+  for (const c of h) {
+    if (isJ(c, Jk) || c === keep) continue;
+    const sc = handScore(h.filter(x => x !== c), Jk) + Math.random() * 0.3;
+    if (sc > bs) { bs = sc; best = c; }
+  }
+  if (!best) best = h.find(c => c !== keep) || h[0];
+  return {card: best, score: bs};
+}
+function botPlay(){
+  botTimer = null;
+  if (mode !== "host" || !S || S.status !== "playing") return;
+  const p = S.players[S.turn];
+  if (!p || !p.bot) return;
+  const id = p.id, Jk = S.jokers, h = S.hands[id];
+  try {
+    if (S.phase === "draw") {
+      const top = S.discard[S.discard.length - 1];
+      let lixo = false;
+      if (top) {
+        const h10 = h.concat(top);
+        if (findBatida(h10, Jk) || isJ(top, Jk)) lixo = true;
+        else lixo = bestDiscard(h10, Jk, top).score - handScore(h, Jk) >= 2;
+      }
+      hostHandle(id, {a:"draw", from: lixo ? "lixo" : "monte"});
+    } else {
+      if (findBatida(h, Jk)) { hostHandle(id, {a:"bater"}); return; }
+      const d = bestDiscard(h, Jk);
+      if (S.canSwap) {
+        const sem = h.filter(c => c !== S.drawn);
+        if (d.score - handScore(sem, Jk) < 2) { hostHandle(id, {a:"swap"}); return; }
+      }
+      hostHandle(id, {a:"discard", card: d.card});
+    }
+  } catch (e) {
+    const c = h.find(x => !isJ(x, Jk)) || h[0];
+    try { hostHandle(id, S.phase === "draw" ? {a:"draw", from:"monte"} : {a:"discard", card:c}); } catch(_){}
+  }
+}
+function scheduleBot(){
+  if (botTimer || mode !== "host" || !S || S.status !== "playing") return;
+  const p = S.players[S.turn];
+  if (p && p.bot) botTimer = setTimeout(botPlay, BOT_DELAY + rnd(Math.max(1, Math.round(BOT_DELAY * .5))));
+}
+
 function broadcast(){
   for (const [pid, c] of conns) if (c.open) { try { c.send({t:"view", v: viewFor(pid)}); } catch(e){} }
   V = viewFor(PID); render();
+  scheduleBot();
 }
 function saveHost(){ lsSet("cacheta-host", JSON.stringify({code: CODE, pid: PID, s: S})); }
 function migrate(s){
@@ -531,7 +606,7 @@ let hostTries = 0;
 function startHost(code, state){
   mode = "host"; CODE = code; S = migrate(state); V = viewFor(PID);
   history.replaceState(null, "", location.pathname + "?mesa=" + CODE);
-  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock();
+  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock(); scheduleBot();
   if (typeof Peer === "undefined") { net = "Sem internet: não consegui carregar a conexão."; render(); return; }
   peer = new Peer(peerIdFor(CODE), PEER_OPTS);
   peer.on("open", () => { hostTries = 0; net = ""; render(); });
@@ -727,8 +802,10 @@ function renderLobby(){
   </section>
   <section class="panel">
     <div class="row" style="justify-content:space-between"><h2>Na mesa</h2><span class="muted">${V.players.length}/6</span></div>
-    <ul class="plist">${V.players.map(p => `<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
+    <ul class="plist">${V.players.map(p => `<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
     ${!inTable ? `<p class="muted" style="margin:0">A mesa está cheia ou a partida já começou. Você está assistindo.</p>` : ""}
+    ${mode==="host" && V.players.length<6 ? `<div class="row"><button class="grow" id="btnBot">+ Adicionar bot</button><button class="grow" id="btnBotFill">Completar com bots</button></div>
+    <p class="muted" style="margin:0;font-size:.8rem">Os bots jogam sozinhos, no seu aparelho. Dá para jogar só você contra eles, até sem internet.</p>` : ""}
     <button class="primary" id="btnStart" ${V.players.length<2||!inTable?"disabled":""}>Dar as cartas</button>
     ${V.players.some(p=>p.wins>0) ? `<button id="btnZerar">Zerar placar</button>` : ""}
   </section>
@@ -742,7 +819,7 @@ function oppsHTML(){
     const i = (start + k) % n, p = V.players[i];
     out += `<div class="opp ${V.status==="playing"&&V.turn===i?"turn":""} ${p.online?"":"off"}">
       ${i===V.dealer?'<span class="dl" title="Deu as cartas">D</span>':""}
-      <span class="nm">${p.id===V.me?"Você":esc(p.nick)}</span>
+      <span class="nm">${p.id===V.me?"Você":esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}</span>
       <span class="backs">${'<i></i>'.repeat(Math.min(p.count,10))}</span>
       <span class="meta" title="${p.count} cartas"><b>${p.wins}</b> ${p.wins===1?"vitória":"vitórias"}</span></div>`;
   }
@@ -959,6 +1036,7 @@ function bind(){
   on("#btnCopy", copyInvite);
   on("#btnShare", () => navigator.share({title:"Cacheta", text:"Entra na mesa " + CODE, url: inviteLink()}).catch(()=>{}));
   document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { if (b.dataset.rm === V.me && mode === "client") { act("remove", {id:b.dataset.rm}); leave(); } else act("remove", {id:b.dataset.rm}); });
+  on("#btnBot", () => act("addBot")); on("#btnBotFill", () => act("addBot", {fill:true}));
   on("#btnStart", () => act("start")); on("#btnZerar", () => act("zerar")); on("#btnNext", () => act("next"));
   on("#btnMenu", () => { confirmReset = false; confirmLeave = false; openMenu(); });
   on("#btnHist", openHist); on("#btnHist2", openHist); on("#trail", openHist);
