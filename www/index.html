@@ -153,6 +153,8 @@ button.card:active{background:var(--face)}
 .seg button.on{background:var(--o);color:var(--o-ink);font-weight:800}
 .seg .sep{width:1px;background:var(--line);margin:4px 2px}
 .seg button.ar{flex:0 0 42px}
+.fora{min-height:58px;font-size:1.08rem;animation:glow 1s ease-in-out infinite alternate}
+@media (prefers-reduced-motion:reduce){.fora{animation:none}}
 .swap{min-height:46px;border-color:var(--o);color:var(--o);background:rgba(255,122,26,.08);font-weight:700}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .actions button{min-height:56px;font-size:1.05rem}
@@ -387,7 +389,7 @@ function deal(s){
   s.stock = deck;
   s.turn = (s.dealer + 1) % s.players.length;
   s.phase = "draw"; s.drawn = null; s.status = "playing"; s.result = null;
-  s.first = true; s.canSwap = false;
+  s.first = true; s.canSwap = false; s.claim = null;
   s.hist = [];
   s.round = (s.round || 0) + 1;
   s.log = "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas.";
@@ -403,6 +405,7 @@ function refillStock(s){
 
 function apply(pid, m){
   const s = S;
+  if (s.claim && ["draw","discard","swap","bater"].includes(m.a)) fail("Espere: alguém pediu para bater com o lixo.");
   switch (m.a) {
     case "hello": {
       const nk = String(m.nick || "").trim().slice(0,14) || "Jogador";
@@ -442,7 +445,7 @@ function apply(pid, m){
       s.dealer = (s.dealer + 1) % s.players.length; deal(s); break;
     case "lobby":
       if (pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
-      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[]});
+      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null});
       break;
     case "zerar":
       s.wins = {}; s.players.forEach(p => s.wins[p.id] = 0); break;
@@ -497,9 +500,62 @@ function apply(pid, m){
       s.log = nickOf(s, pid) + " bateu!";
       break;
     }
+    case "baterLixo": {
+      const last = s.hist && s.hist[s.hist.length-1];
+      if (s.status !== "playing" || s.phase !== "draw" || !s.discard.length || !last || last.a !== "d") fail("Não dá para bater com o lixo agora.");
+      if (last.p === pid) fail("Você não pode bater com a carta que você mesmo descartou.");
+      if (!canBaterLixo(s, pid)) fail("Essa carta não fecha a sua batida.");
+      if (!s.claim) s.claim = {ids: [], from: last.p};
+      if (!s.claim.ids.includes(pid)) s.claim.ids.push(pid);
+      const best = bestEligible(s);
+      if (!best || s.claim.ids.includes(best)) finishClaim(s);     // quem tem a preferência já pediu
+      else { s.log = nickOf(s, pid) + " pediu para bater com " + cardName(s.discard[s.discard.length-1]) + "…"; armClaim(); }
+      break;
+    }
     default: return;
   }
   saveHost(); broadcast();
+}
+/* ---------- batida com o lixo: preferência para quem vem antes na rodada ---------- */
+const CLAIM_MS = window.__claimMs || 3000;
+let claimTimer = null;
+const lastDiscarder = s => { const e = s.hist && s.hist[s.hist.length-1]; return e && e.a === "d" ? e.p : null; };
+function orderDist(s, id, from){ const n = s.players.length; return (pIdx(s, id) - pIdx(s, from) + n) % n; }
+function canBaterLixo(s, id){
+  const top = s.discard && s.discard[s.discard.length-1];
+  return !!(top && s.hands && s.hands[id] && s.hands[id].length === 9 && findBatida(s.hands[id].concat(top), s.jokers));
+}
+function bestEligible(s){
+  const from = s.claim ? s.claim.from : lastDiscarder(s);
+  const el = s.players.map(p => p.id).filter(id => id !== from && canBaterLixo(s, id));
+  el.sort((a,b) => orderDist(s, a, from) - orderDist(s, b, from));
+  return el[0] || null;
+}
+function finishClaim(s){
+  if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
+  const from = s.claim.from;
+  const ids = s.claim.ids.filter(id => canBaterLixo(s, id)).sort((a,b) => orderDist(s, a, from) - orderDist(s, b, from));
+  s.claim = null;
+  const pid = ids[0];
+  if (!pid) return;
+  const top = s.discard.pop();
+  const h10 = s.hands[pid].concat(top);
+  const melds = findBatida(h10, s.jokers);
+  const fora = !isTurn(s, pid);
+  s.hands[pid] = h10;
+  s.hist.push({p:pid, a:"l", c:top, fora:true});
+  s.wins[pid] = (s.wins[pid] || 0) + 1;
+  s.status = "roundEnd";
+  s.result = {winner: pid, melds, limpa: !!findBatida(h10, []), fora, card: top, from, rivals: ids.slice(1)};
+  s.first = false; s.canSwap = false;
+  s.log = nickOf(s, pid) + (fora ? " bateu de fora com " : " bateu com ") + cardName(top) + " do lixo!";
+}
+function armClaim(){
+  if (claimTimer) return;
+  claimTimer = setTimeout(() => {
+    claimTimer = null;
+    if (mode === "host" && S && S.claim && S.status === "playing") { finishClaim(S); saveHost(); broadcast(); }
+  }, CLAIM_MS);
 }
 function hostHandle(pid, m){
   try { apply(pid, m); }
@@ -525,6 +581,7 @@ function viewFor(pid){
     drawn: isTurn(s, pid) ? s.drawn : null,
     canSwap: isTurn(s, pid) && !!s.canSwap,
     hist: s.hist || [],
+    claim: s.claim ? {ids: s.claim.ids.slice(), from: s.claim.from} : null,
     result: s.status === "roundEnd" ? s.result : null,
   };
 }
@@ -553,7 +610,7 @@ function bestDiscard(h, Jk, keep){
 }
 function botPlay(){
   botTimer = null;
-  if (mode !== "host" || !S || S.status !== "playing") return;
+  if (mode !== "host" || !S || S.status !== "playing" || S.claim) return;
   const p = S.players[S.turn];
   if (!p || !p.bot) return;
   const id = p.id, Jk = S.jokers, h = S.hands[id];
@@ -581,10 +638,28 @@ function botPlay(){
     try { hostHandle(id, S.phase === "draw" ? {a:"draw", from:"monte"} : {a:"discard", card:c}); } catch(_){}
   }
 }
+let botClaimTimer = null;
 function scheduleBot(){
-  if (botTimer || mode !== "host" || !S || S.status !== "playing") return;
+  if (mode !== "host" || !S || S.status !== "playing") return;
+  const jitter = () => rnd(Math.max(1, Math.round(BOT_DELAY * .5)));
+  const from = lastDiscarder(S);
+  const fresh = S.phase === "draw" && S.discard.length && from;
+  if (fresh && !botClaimTimer) {
+    const bestNow = S.claim && S.claim.ids.length ? Math.min(...S.claim.ids.map(id => orderDist(S, id, from))) : Infinity;
+    const cands = S.players.filter(q => q.bot && q.id !== from && !(S.claim && S.claim.ids.includes(q.id))
+      && orderDist(S, q.id, from) < bestNow && canBaterLixo(S, q.id))
+      .sort((a,b) => orderDist(S, a.id, from) - orderDist(S, b.id, from));
+    if (cands.length) {
+      const q = cands[0];
+      const delay = S.claim ? 300 + rnd(400) : Math.round(BOT_DELAY * 1.2) + jitter();
+      botClaimTimer = setTimeout(() => { botClaimTimer = null; hostHandle(q.id, {a:"baterLixo"}); }, delay);
+      return;
+    }
+  }
+  if (S.claim || botTimer) return;
   const p = S.players[S.turn];
-  if (p && p.bot) botTimer = setTimeout(botPlay, BOT_DELAY + rnd(Math.max(1, Math.round(BOT_DELAY * .5))));
+  // depois de um descarte, o bot espera mais para dar tempo de alguém bater de fora
+  if (p && p.bot) botTimer = setTimeout(botPlay, BOT_DELAY + (fresh ? Math.round(BOT_DELAY * 1.3) : 0) + jitter());
 }
 
 function broadcast(){
@@ -598,6 +673,7 @@ function migrate(s){
   if (s.vira && !s.jokers) s.jokers = jokersFor(s.vira);
   if (!s.hist) s.hist = [];
   if (!s.discard && s.status === "playing") s.discard = [];
+  if (s.claim && s.status === "playing") { try { finishClaim(s); } catch(e) { s.claim = null; } }
   return s;
 }
 
@@ -752,6 +828,7 @@ function rulesPanel(){
       <li>Na primeira jogada da rodada, quem começa compra do monte. Se não quiser a carta, pode <b>descartá-la e comprar outra</b>.</li>
       <li>Depois, na sua vez, compre do <b>monte</b> ou pegue a carta de cima do <b>lixo</b>, e descarte uma.</li>
       <li>Para <b>bater</b>, logo depois de comprar, as 10 cartas precisam formar <b>3 + 3 + 4</b>. Vale bater com a carta do lixo.</li>
+      <li>Se alguém descartar a carta que fecha a sua batida, você pode <b>bater de fora</b>, mesmo fora da sua vez, até o próximo jogador comprar. Se mais de um pedir, a batida fica com <b>quem vem primeiro na rodada</b> depois de quem descartou (há 3 segundos para os outros pedirem).</li>
       <li><b>Trinca</b>: 3 do mesmo valor e naipes diferentes. <b>Sequência</b>: mesmo naipe, cartas seguidas; Ás vale A-2-3 e Q-K-A, nunca K-A-2.</li>
       <li>Jogo de 4 iguais: trinca de naipes diferentes <b>mais uma repetida</b> (7♠ 7♥ 7♦ 7♠).</li>
       <li>Cada batida vale <b>1 vitória</b> no placar.</li>
@@ -841,14 +918,28 @@ function renderGame(){
       groups.forEach(g => g.cards.forEach((c,k) => mark[c] = {kind:g.kind, s:k===0, e:k===g.cards.length-1}));
     } else syncOrder(V.hand);
   }
-  const canDraw = mine && V.phase === "draw";
+  const canDraw = mine && V.phase === "draw" && !V.claim;
   const bat = mine && V.phase === "discard" ? findBatida(V.hand, Jk) : null;
+  const lastEv = V.hist && V.hist[V.hist.length-1];
+  const freshTop = V.phase === "draw" && V.top && lastEv && lastEv.a === "d" && lastEv.c === V.top;
+  const canFora = meIn && freshTop && lastEv.p !== V.me && V.hand.length === 9 && !!findBatida(V.hand.concat(V.top), Jk);
+  const claimIds = (V.claim && V.claim.ids) || [];
+  const iClaimed = claimIds.includes(V.me);
+  const dOf = id => { const n = V.players.length, i = V.players.findIndex(p => p.id === id), f = V.players.findIndex(p => p.id === (V.claim ? V.claim.from : lastEv && lastEv.p)); return (i - f + n) % n; };
+  const iHavePref = canFora && claimIds.length && !iClaimed && dOf(V.me) < Math.min(...claimIds.map(dOf));
   const who = esc(nk(V.players[V.turn].id));
   let status;
   if (!meIn) status = `Você está assistindo. Vez de ${who}.`;
   else if (mine && V.phase === "draw") status = V.top ? "Sua vez: compre do monte ou pegue do lixo." : "Sua vez: compre do monte.";
   else if (mine) status = bat ? "Dá para bater! Toque em Bater." : V.canSwap ? "Não quer essa carta? Troque por outra." : "Escolha uma carta e descarte.";
   else status = `Vez de ${who}.`;
+  if (canFora) status = `O ${cardName(V.top)} do lixo fecha a sua batida!`;
+  if (V.claim) {
+    const quem = claimIds.map(id => id === V.me ? "Você" : esc(nk(id))).join(" e ");
+    status = iClaimed ? `Você pediu para bater. Conferindo quem tem a preferência…`
+      : iHavePref ? `${quem} pediu para bater, mas você vem antes na rodada: bata agora!`
+      : `${quem} pediu para bater com o ${cardName(V.top)}…`;
+  }
   const recent = discardsWithPicks().slice(-14).reverse();
   let gsum = "";
   if (groups) {
@@ -871,10 +962,11 @@ function renderGame(){
       <div class="trail" id="trail">${recent.length ? recent.map(({e,pk}) => `<div class="t ${pk?"pk":""}">${cardHTML(e.c,"xs")}<span class="w">${pk?"↑ "+esc(nk(pk)):esc(nk(e.p))}</span></div>`).join("") : '<span class="empty">Ninguém descartou ainda.</span>'}</div>
     </div>
   </section>
-  <div class="status ${mine?"mine":""}">${status}</div>
+  <div class="status ${mine||canFora?"mine":""}">${status}</div>
   <div class="log">${esc(V.log)}</div>
   ${meIn ? `
   <div class="handwrap">
+    ${canFora ? (iClaimed ? `<button class="fora" disabled>Pedido enviado…</button>` : `<button class="primary fora" id="btnFora">Bater com o ${cardName(V.top)} do lixo${iHavePref?" (você tem a preferência)":""}</button>`) : ""}
     <div class="hand" id="hand">${order.map(c => {
       const m = mark[c];
       const bar = m && (m.kind === "jogo" || m.kind === "par") ? `<span class="gb ${m.kind==="par"?"par":""} ${m.s?"":"jl"} ${m.e?"":"jr"}"></span>` : "";
@@ -907,7 +999,8 @@ function renderEnd(){
   ${netHTML()}
   <section class="panel">
     <div class="eyebrow">Fim da rodada</div>
-    <h1 style="font-size:clamp(1.8rem,9vw,2.6rem)">${esc(nk(r.winner))} <em>bateu${r.limpa?" limpo":""}!</em></h1>
+    <h1 style="font-size:clamp(1.8rem,9vw,2.6rem)">${esc(nk(r.winner))} <em>bateu${r.fora?" de fora":""}${r.limpa?" limpo":""}!</em></h1>
+    ${r.card ? `<div class="muted" style="font-size:.88rem">Com o ${cardName(r.card)} que ${esc(nk(r.from))} descartou.${r.rivals && r.rivals.length ? ` ${r.rivals.map(id => esc(nk(id))).join(" e ")} também pediu, mas ${esc(nk(r.winner))} vinha antes na rodada.` : ""}</div>` : ""}
     <div class="melds">${r.melds.map(m => `<div class="meld"><span class="t">${m.t}</span>${sortMeld(m.c, m.t, J()).map(c=>cardHTML(c,"md")).join("")}</div>`).join("")}</div>
     <div class="muted" style="font-size:.85rem">Vira ${V.vira?cardName(V.vira):"—"} · coringas ${J().map(j=>cardName(j+"0")).join(" e ")}</div>
   </section>
@@ -942,7 +1035,7 @@ function evText(e){
   const who = `<b>${esc(nk(e.p))}</b>`;
   if (e.a === "d") return `${who} descartou ${cardName(e.c)}`;
   if (e.a === "t") return `${who} recusou a 1ª carta e descartou ${cardName(e.c)}`;
-  if (e.a === "l") return `<span class="lx">${who} pegou ${cardName(e.c)} do lixo</span>`;
+  if (e.a === "l") return `<span class="lx">${who} ${e.fora?"bateu com":"pegou"} ${cardName(e.c)} do lixo</span>`;
   if (e.a === "r") return `O lixo foi embaralhado e virou monte`;
   return "";
 }
@@ -1050,6 +1143,7 @@ function bind(){
   on("#btnSwap", () => { sel = null; act("swap"); });
   on("#btnDesc", () => { if (sel) { const c = sel; sel = null; act("discard", {card:c}); } });
   on("#btnBater", () => act("bater"));
+  on("#btnFora", () => act("baterLixo"));
   const h = $("#hand");
   if (h) h.onclick = e => { const b = e.target.closest("[data-card]"); if (!b) return; sel = sel === b.dataset.card ? null : b.dataset.card; render(); };
   const code = $("#code"); if (code && code.type !== "hidden") code.onkeydown = e => { if (e.key === "Enter") $("#btnJoin").click(); };
