@@ -270,6 +270,12 @@ button.card:active{background:var(--face)}
 .big .k{font:800 .75rem var(--ui);letter-spacing:.18em;text-transform:uppercase;opacity:.8}
 .big .t{font-family:var(--display);font-stretch:118%;font-weight:900;font-size:clamp(1.8rem,9vw,2.6rem);line-height:1;text-transform:uppercase}
 .big .d{font-weight:700;font-size:1.05rem}
+.big .bc{display:flex;justify-content:center;gap:8px;margin:8px 0 2px;flex-wrap:wrap}
+.big .bc .card{box-shadow:0 6px 16px rgba(0,0,0,.35)}
+.big .bc .card.joker{outline:3px solid #fff;outline-offset:1px}
+.big .ok{margin-top:8px;background:var(--gold-ink);color:var(--gold-a);border:0;min-height:48px;font-size:1.05rem;font-weight:800}
+.big.bad .ok{background:#fff;color:#b91c1c}
+.big .w{font-size:.78rem;font-weight:600;opacity:.85;min-height:1em}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes zoom{from{transform:scale(.85)}to{transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.big,.big .bx{animation:none}}
@@ -418,6 +424,48 @@ function prizeCheck(k, hand, d, ctx){
       return d ? (id2(d) === ctx.chosen ? 1 : 0) : (hand.some(c => id2(c) === ctx.chosen) ? 1 : 0);
   }
   return 0;
+}
+
+// quais cartas formam o prêmio (para mostrar no alerta)
+function prizeCards(k, hand, d, ctx){
+  const id2 = c => c.slice(0,2);
+  switch (k) {
+    case "maior": {
+      if (d) return [d];
+      const su = ctx.vira && st(ctx.vira);
+      return hand.filter(c => st(c) === su && rv(c) <= 10).sort((a,b) => rv(b) - rv(a)).slice(0,1);
+    }
+    case "asCopas": return d ? [d] : hand.filter(c => id2(c) === "AH").slice(0,1);
+    case "seisNove":
+      for (const su of (d ? [st(d)] : [...SUITS])) {
+        const six = d && id2(d) === "6" + su ? d : hand.find(c => id2(c) === "6" + su);
+        const nine = d && id2(d) === "9" + su ? d : hand.find(c => id2(c) === "9" + su);
+        if (six && nine) return [six, nine];
+      }
+      return [];
+    case "sequencia":
+      for (const su of (d ? [st(d)] : [...SUITS])) {
+        const cs = hand.filter(c => st(c) === su);
+        for (let a = 1; a <= 11; a++) {
+          const pick = []; let ok = true;
+          for (let i = 0; i < 4; i++) {
+            const v = a + i, want = c => rk(c) === "A" ? (v === 1 || v === 14) : rv(c) === v;
+            const c = d && want(d) && !pick.includes(d) ? d : cs.find(x => want(x) && !pick.includes(x));
+            if (!c) { ok = false; break; }
+            pick.push(c);
+          }
+          if (ok && (!d || pick.includes(d))) return pick;
+        }
+      }
+      return [];
+    case "duplicada": {
+      if (d) { const tw = hand.find(c => c !== d && id2(c) === id2(d)); return tw ? [tw, d] : []; }
+      for (const c of hand) { const tw = hand.find(x => x !== c && id2(x) === id2(c)); if (tw) return [c, tw]; }
+      return [];
+    }
+    case "escolhida": return d ? [d] : hand.filter(c => id2(c) === ctx.chosen).slice(0,1);
+  }
+  return [];
 }
 
 /* ---------- agrupar a mão em jogos ---------- */
@@ -666,17 +714,37 @@ function settle(s, winner){                 // fecha a rodada: Batida para quem 
   });
   s.settled = true; s.lastSettle = sum;
 }
-function awardPrize(s, k, pid){
+function awardPrize(s, k, pid, cards){
   s.prizes[k].winner = pid;
   const amt = payPot(s, k, pid);
-  s.hist.push({p:pid, a:"p", k, amt});
+  const key = (s.round || 0) + "-" + s.hist.length;
+  s.hist.push({p:pid, a:"p", k, amt, cards: cards || [], key});
   s.log = nickOf(s, pid) + " ganhou o prêmio " + potName(k) + " (+" + amt + " fichas)!";
+  // o relógio pausa até todos os jogadores (pessoas) confirmarem que viram o alerta
+  const need = s.players.filter(p => !p.bot && (p.id === PID || (conns.get(p.id) && conns.get(p.id).open))).map(p => p.id);
+  if (need.length) {
+    s.acks = s.acks || {};
+    s.acks[key] = {need, got: []};
+    if (s.clockStart && !s.pausedAt) { s.pausedAt = Date.now(); s.ackPaused = true; }
+  }
+}
+const pendingAcks = s => Object.keys(s.acks || {}).length > 0;
+function ackCheck(s){
+  Object.keys(s.acks || {}).forEach(k => {
+    const a = s.acks[k];
+    a.need = a.need.filter(id => pIdx(s, id) >= 0);
+    if (a.need.every(id => a.got.includes(id))) delete s.acks[k];
+  });
+  if (!pendingAcks(s) && s.ackPaused && s.pausedAt) {
+    s.pausedTotal = (s.pausedTotal || 0) + (Date.now() - s.pausedAt);
+    s.pausedAt = null; s.ackPaused = false;
+  }
 }
 function closeInitial(s){
   if (!s.initialOpen) return;
   s.initialOpen = false;
   const pr = s.prizes.maior, c = pr.cands.filter(x => pIdx(s, x.p) >= 0);
-  if (!pr.winner && c.length) awardPrize(s, "maior", c.reduce((a, x) => x.v > a.v ? x : a).p);
+  if (!pr.winner && c.length) { const w = c.reduce((a, x) => x.v > a.v ? x : a).p; awardPrize(s, "maior", w, prizeCards("maior", s.hands[w], null, {vira: s.vira, chosen: s.chosen})); }
   else s.log = "Compras liberadas!";
   s.turnAt = Date.now();
 }
@@ -744,6 +812,7 @@ function removePlayer(s, id){
       if (!s.claim.ids.length) { s.claim = null; if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; } }
     }
     if (s.payPick) { delete s.payPick[id]; maybeOpen(s); }
+    if (pendingAcks(s)) ackCheck(s);
     if (s.choosing && s.chooser === id && s.players.length) s.chooser = s.players[s.turn].id;
     s.hist.push({p:id, a:"x"});
     s.log = nickOf(s, id) + " saiu do jogo. A rodada continua.";
@@ -871,9 +940,16 @@ function apply(pid, m){
       if (!s.clockStart) fail("O relógio começa na primeira compra de carta.");
       if (pIdx(s, pid) < 0) fail("Só quem está na mesa pode pausar o relógio.");
       const now = Date.now();
-      if (s.pausedAt) { s.pausedTotal = (s.pausedTotal || 0) + (now - s.pausedAt); s.pausedAt = null; }
-      else s.pausedAt = now;
+      if (s.pausedAt) { s.pausedTotal = (s.pausedTotal || 0) + (now - s.pausedAt); s.pausedAt = null; s.acks = {}; s.ackPaused = false; }
+      else { s.pausedAt = now; s.ackPaused = false; }
       s.clockBy = pid;
+      break;
+    }
+    case "ack": {
+      const a = s.acks && s.acks[m.key];
+      if (!a) return;
+      if (a.need.includes(pid) && !a.got.includes(pid)) a.got.push(pid);
+      ackCheck(s);
       break;
     }
     case "setStart": {
@@ -925,11 +1001,11 @@ function apply(pid, m){
           s.log = nickOf(s, pid) + " mostrou carta para o Maior.";
           break;
         }
-        awardPrize(s, k, pid); break;
+        awardPrize(s, k, pid, prizeCards(k, H, null, ctx)); break;
       }
       if (!(isTurn(s, pid) && s.phase === "discard" && s.drawn)) fail("Agora só vale prêmio com a carta que você acabou de comprar.");
       if (!prizeCheck(k, H, s.drawn, ctx)) fail("A carta comprada não forma o prêmio " + potName(k) + ".");
-      awardPrize(s, k, pid); break;
+      awardPrize(s, k, pid, prizeCards(k, H, s.drawn, ctx)); break;
     }
     case "draw": {
       if (!isTurn(s, pid) || s.phase !== "draw") fail("Não é hora de comprar.");
@@ -944,7 +1020,10 @@ function apply(pid, m){
         refillStock(s);
         c = s.stock.pop();
       }
-      if (!s.clockStart) s.clockStart = Date.now();   // relógio começa na primeira compra
+      if (!s.clockStart) {                             // relógio começa na primeira compra
+        s.clockStart = Date.now();
+        if (pendingAcks(s)) { s.pausedAt = s.clockStart; s.ackPaused = true; }
+      }
       s.hands[pid].push(c); s.phase = "discard"; s.drawn = c; s.drawnFrom = m.from === "lixo" ? "lixo" : "monte";
       s.canSwap = !!s.first && m.from !== "lixo";
       s.log = nickOf(s, pid) + (m.from === "lixo" ? " pegou " + cardName(c) + " do lixo." : " comprou do monte.");
@@ -1083,7 +1162,8 @@ function viewFor(pid){
     canSwap: isTurn(s, pid) && !!s.canSwap,
     hist: s.hist || [],
     claim: s.claim ? {ids: s.claim.ids.slice(), from: s.claim.from} : null,
-    clk: {el: s.clockStart ? (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0) : null, lim: s.limitMin || 0, paused: !!s.pausedAt, by: s.clockBy || null},
+    clk: {el: s.clockStart ? (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0) : null, lim: s.limitMin || 0, paused: !!s.pausedAt, by: s.ackPaused ? null : (s.clockBy || null), ack: !!s.ackPaused},
+    acks: s.acks || {},
     result: s.status === "roundEnd" ? s.result : null,
     names: s.names || {},
     choosing: s.status === "playing" && !!s.choosing,
@@ -1360,6 +1440,7 @@ function leave(){
   try { peer && peer.destroy(); } catch(e){}
   peer = null; conn = null; conns.clear(); S = null; V = null; mode = "start"; CODE = null; net = "";
   clockBase = null; clockV = null; lastCycle = null; clockLim = 0; clockPaused = false;
+  bigShown = new Set(); bigQ = []; bigCur = null; $("#big").hidden = true;
   history.replaceState(null, "", location.pathname);
   closeDrawer(); render();
 }
@@ -1381,7 +1462,7 @@ function syncClock(){
 }
 function clockText(){
   const el = clockEl(), limMs = clockLim * 60000;
-  return `${fmtTime(limMs ? el % limMs : el)}${clockPaused ? ` <small>pausado</small>` : limMs ? ` <small>/ ${clockLim} min</small>` : ""}`;
+  return `${fmtTime(limMs ? el % limMs : el)}${clockPaused ? ` <small>${V && V.clk && V.clk.ack ? "aguardando" : "pausado"}</small>` : limMs ? ` <small>/ ${clockLim} min</small>` : ""}`;
 }
 function clockHTML(){
   if (clockBase == null) return `<span class="clock off" id="clock" title="Começa na primeira compra">0:00</span>`;
@@ -1449,7 +1530,8 @@ setInterval(() => {
 }, 1000);
 
 /* =================== alertas grandes =================== */
-let seenRound = null, seenLen = 0, bigQ = [], bigT = null;
+let seenRound = null, seenLen = 0, bigQ = [], bigT = null, bigShown = new Set(), bigCur = null;
+const needsMyAck = key => { const a = V && V.acks && V.acks[key]; return !!(a && a.need.includes(V.me) && !a.got.includes(V.me)); };
 function syncBig(){
   if (!V || !V.hist) return;
   if (V.status === "lobby" || V.status === "draft") { seenRound = null; seenLen = 0; return; }
@@ -1457,19 +1539,31 @@ function syncBig(){
   const novos = V.hist.slice(seenLen); seenLen = V.hist.length;
   novos.forEach(e => {
     if (e.a === "q") bigQ.push({cls:"bad", k:"Batida errada", t:(e.p === V.me ? "Você" : nk(e.p)) + " bateu errado!", d:"Agora só pode bater com carta comprada do monte."});
-    if (e.a === "p") bigQ.push({cls:"win", k:"Prêmio", t:potName(e.k), d:(e.p === V.me ? "Você ganhou" : nk(e.p) + " ganhou") + " +" + e.amt + " fichas (" + reais(e.amt) + ")"});
+    if (e.a === "p") queuePrize(e);
   });
-  if (!bigT) nextBig();
+  // quem entrou ou voltou no meio também confirma os alertas pendentes
+  (V.hist || []).forEach(e => { if (e.a === "p" && e.key && needsMyAck(e.key)) queuePrize(e); });
+  if (!bigT && !bigCur) nextBig();
+}
+function queuePrize(e){
+  if (e.key && bigShown.has(e.key)) return;
+  if (e.key) bigShown.add(e.key);
+  bigQ.push({cls:"win", k:"Prêmio", t:potName(e.k), d:(e.p === V.me ? "Você ganhou" : nk(e.p) + " ganhou") + " +" + e.amt + " fichas (" + reais(e.amt) + ")", cards: e.cards || [], key: e.key});
 }
 function nextBig(){
   const el = $("#big"), it = bigQ.shift();
-  if (!it) { el.hidden = true; bigT = null; return; }
+  clearTimeout(bigT); bigT = null; bigCur = it || null;
+  if (!it) { el.hidden = true; return; }
+  const pede = it.key && needsMyAck(it.key);
   el.className = "big " + it.cls;
-  el.innerHTML = `<div class="bx"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.t)}</span><span class="d">${esc(it.d)}</span></div>`;
+  el.innerHTML = `<div class="bx"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.t)}</span><span class="d">${esc(it.d)}</span>
+    ${it.cards && it.cards.length ? `<div class="bc">${it.cards.map(c => cardHTML(c, "md")).join("")}</div>` : ""}
+    ${it.key ? `<button class="ok" id="bigOk">${pede ? "Ok, vi" : "Fechar"}</button><span class="w">${pede ? "O relógio volta a correr quando todos confirmarem." : ""}</span>` : ""}</div>`;
   el.hidden = false;
-  el.onclick = () => { clearTimeout(bigT); nextBig(); };
+  const fechar = () => { if (it.key && needsMyAck(it.key)) act("ack", {key: it.key}); nextBig(); };
+  if (it.key) { $("#bigOk").onclick = e => { e.stopPropagation(); fechar(); }; el.onclick = null; if (!pede) bigT = setTimeout(nextBig, 5000); }
+  else { el.onclick = () => nextBig(); bigT = setTimeout(nextBig, 3000); }
   try { navigator.vibrate && navigator.vibrate(it.cls === "bad" ? [250,120,250] : 200); } catch(e){}
-  bigT = setTimeout(nextBig, 3000);
 }
 
 /* =================== fichas na tela =================== */
@@ -1615,6 +1709,7 @@ function rulesPanel(){
       <li><b>Prêmios</b>: Maior (carta mais alta do naipe do coringa, de Ás a 10; 10 é a maior), Ás de Copas, 6 e 9 do mesmo naipe, Sequência de 4 do mesmo naipe (sem coringa), Duplicada (duas cartas iguais) e Escolhida (carta definida por quem começa, antes de ver a mão).</li>
       <li>Depois de dar as cartas, há <b>10 s</b> para mostrar prêmios com a mão inicial (no Maior, leva quem mostrar a mais alta). Depois disso, prêmio só vale formado com a <b>carta que você acabou de comprar</b>.</li>
       <li>Depois de cada descarte, o próximo jogador espera <b>3 s</b> para comprar.</li>
+      <li>Quando sai um prêmio, todos veem as cartas usadas e o <b>relógio pausa</b> até todo mundo tocar em "Ok, vi". Se alguém sumir, toque no relógio para retomar.</li>
     </ul>
   </section>`;
 }
@@ -1888,7 +1983,7 @@ function evText(e){
   if (e.a === "r") return `O lixo foi embaralhado e virou monte`;
   if (e.a === "x") return `${who} saiu do jogo`;
   if (e.a === "e") return `<span style="color:#fca5a5">${who} ficou sem fichas para a Batida e saiu${e.amt ? ` (${e.amt} fichas divididas, ${e.share} para cada)` : ""}</span>`;
-  if (e.a === "p") return `<span class="lx">${who} ganhou o prêmio ${potName(e.k)} (+${e.amt} fichas)</span>`;
+  if (e.a === "p") return `<span class="lx">${who} ganhou o prêmio ${potName(e.k)} (+${e.amt} fichas)${e.cards && e.cards.length ? " com " + e.cards.map(cardName).join(" ") : ""}</span>`;
   if (e.a === "q") return `<span style="color:#fca5a5">${who} bateu errado</span>`;
   return "";
 }
