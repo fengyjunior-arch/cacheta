@@ -21,11 +21,12 @@
   --gold-a:#fff4c7; --gold-b:#f5c84c; --gold-c:#c58e17; --gold-ink:#3a2804;
   --display:"Archivo","Arial Narrow",system-ui,sans-serif;
   --ui:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --navgap:48px;          /* espaço livre na base para os botões de navegação do celular */
   color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:radial-gradient(120% 40% at 50% -8%,rgba(255,122,26,.17),transparent 70%),var(--bg);background-color:var(--bg);color:var(--text);font-family:var(--ui);font-size:15px;-webkit-tap-highlight-color:transparent;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);overscroll-behavior:none}
+body{background:radial-gradient(120% 40% at 50% -8%,rgba(255,122,26,.17),transparent 70%),var(--bg);background-color:var(--bg);color:var(--text);font-family:var(--ui);font-size:15px;-webkit-tap-highlight-color:transparent;padding-top:env(safe-area-inset-top,0px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + var(--navgap));overscroll-behavior:none}
 [hidden]{display:none!important}
 .wrap{max-width:760px;margin:0 auto;padding-inline:10px;padding-block:8px 10px;display:flex;flex-direction:column;gap:10px;min-height:100%}
 .brand{font-family:var(--display);font-stretch:125%;font-weight:900;text-transform:none;color:var(--o);line-height:1;letter-spacing:.01em}
@@ -50,6 +51,46 @@ input.code{text-transform:uppercase;letter-spacing:.3em;font-weight:800;text-ali
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 .codebig{font-family:var(--display);font-stretch:125%;font-weight:900;font-size:clamp(2.4rem,12vw,3.4rem);letter-spacing:.14em;color:var(--o);text-align:center;line-height:1}
 .net{font-size:.8rem;text-align:center;color:var(--o);font-weight:600}
+
+/* tela de jogo: tudo cabe na altura do celular, sem rolagem */
+.wrap.game{height:100%;min-height:0;overflow:hidden;gap:6px;padding-block:6px 4px}
+.game .top button{min-height:32px;padding:4px 10px}
+.game .opp{padding:5px 8px;gap:2px}
+.game .table{flex:1 1 auto;min-height:calc(var(--tc) * 1.4 + 34px);overflow:hidden;padding:8px;gap:8px;--tc:clamp(46px,min(18vw,11.5dvh),104px);justify-content:space-evenly}
+.game .trailbox{padding-top:6px;gap:4px}
+.game .trailhead button{min-height:26px;padding:2px 10px}
+.game .trail{min-height:0}
+.game .status{font-size:.95rem;min-height:1.25em}
+.game .log{font-size:.72rem;margin-top:-4px}
+.game .handwrap{gap:6px}
+.game .hand{gap:6px;padding-top:10px;justify-items:center}
+.game .hand .card{width:min(100%,9.3dvh)}
+.game .hand .card .r{font-size:min(6.6vw,3.1dvh)}
+.game .hand .card .s1{font-size:min(4.3vw,2dvh)}
+.game .hand .card .s{font-size:min(10.5vw,4.8dvh)}
+.game .gsum{font-size:.72rem;min-height:1em}
+.game .seg button{min-height:32px}
+.game .actions button{min-height:46px}
+.game .swap{min-height:40px}
+.game .fora{min-height:46px}
+.game .prizes{grid-template-columns:1.35fr repeat(6,minmax(0,1fr));gap:4px}
+.game .pz{padding:4px 5px;border-radius:8px}
+.game .pz.bat{grid-column:auto}
+.game .pz .pn{font-size:.52rem;letter-spacing:.04em}
+.game .pz .pv{font-size:.8rem}
+.game .pz.bat .pv{font-size:.9rem}
+.game .pz .pw{font-size:.55rem}
+.actions.three{grid-template-columns:1fr .9fr 1fr}
+.actions .swap{min-height:46px;font-size:.9rem}
+@media (max-height:860px){.game .trailbox{display:none}}
+@media (max-height:720px){
+  .wrap.game{gap:5px}
+  .game .log,.game .gsum,.game .backs,.game .pz .pw{display:none}
+  .game .hand .card{width:min(100%,8.4dvh)}
+  .game .table{--tc:clamp(44px,10.5dvh,90px)}
+  .game .seg button{min-height:30px}
+  .game .actions button{min-height:42px}
+}
 
 /* topo */
 .top{display:flex;align-items:center;gap:8px}
@@ -221,6 +262,18 @@ button.card:active{background:var(--face)}
 .money{font-variant-numeric:tabular-nums;font-weight:800}
 .money.pos{color:#4ade80}.money.neg{color:#f87171}
 
+/* alerta grande (batida errada / prêmio) */
+.big{position:fixed;inset:0;z-index:11;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.55);animation:fade .2s ease-out}
+.big .bx{width:min(100%,420px);border-radius:22px;padding:22px 20px;text-align:center;display:flex;flex-direction:column;gap:6px;box-shadow:0 20px 50px rgba(0,0,0,.7);animation:zoom .25s ease-out}
+.big.win .bx{background:linear-gradient(150deg,var(--gold-a),var(--gold-b) 50%,var(--gold-c));color:var(--gold-ink)}
+.big.bad .bx{background:#dc2626;color:#fff}
+.big .k{font:800 .75rem var(--ui);letter-spacing:.18em;text-transform:uppercase;opacity:.8}
+.big .t{font-family:var(--display);font-stretch:118%;font-weight:900;font-size:clamp(1.8rem,9vw,2.6rem);line-height:1;text-transform:uppercase}
+.big .d{font-weight:700;font-size:1.05rem}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes zoom{from{transform:scale(.85)}to{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.big,.big .bx{animation:none}}
+
 /* lobby e listas */
 .plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .plist li{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;background:var(--s2)}
@@ -261,6 +314,7 @@ button.card:active{background:var(--face)}
 <div id="toast" class="toast" hidden></div>
 <div id="drawer" class="drawer" hidden></div>
 <div id="alarm" class="alarm" role="alert" hidden></div>
+<div id="big" class="big" role="alert" hidden></div>
 
 <script>
 (() => {
@@ -328,6 +382,7 @@ const PRIZES = [
   {k:"sequencia", n:"Sequência"}, {k:"duplicada", n:"Duplicada"}, {k:"escolhida", n:"Escolhida"}];
 const POTS = ["batida", ...PRIZES.map(p => p.k)];
 const potName = k => k === "batida" ? "Batida" : PRIZES.find(p => p.k === k).n;
+const SHORT = {batida:"Batida", maior:"Maior", asCopas:"Ás ♥", seisNove:"6 e 9", sequencia:"Seq.", duplicada:"Dupl.", escolhida:"Escolh."};
 const FICHA = 0.10;
 // devolve um número > 0 quando a mão tem o prêmio; com "d", o prêmio precisa usar a carta comprada d
 function prizeCheck(k, hand, d, ctx){
@@ -501,6 +556,8 @@ function deal(s){
   s.turnAt = Date.now(); s.draft = null;
   s.hist = [];
   s.choosing = true; s.chosen = null; s.initialOpen = false; s.openUntil = 0; s.lockUntil = 0; s.openedOnce = false;
+  // 1ª rodada: quem começa escolhe a carta; depois, quem bateu a rodada anterior
+  s.chooser = s.lastWinner && pIdx(s, s.lastWinner) >= 0 ? s.lastWinner : s.players[s.turn].id;
   s.prizes = {}; PRIZES.forEach(p => s.prizes[p.k] = {winner: null, cands: []});
   setupPots(s);
   out.forEach(o => s.hist.push({p:o.id, a:"e", amt:o.rest, share:o.share}));
@@ -687,6 +744,7 @@ function removePlayer(s, id){
       if (!s.claim.ids.length) { s.claim = null; if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; } }
     }
     if (s.payPick) { delete s.payPick[id]; maybeOpen(s); }
+    if (s.choosing && s.chooser === id && s.players.length) s.chooser = s.players[s.turn].id;
     s.hist.push({p:id, a:"x"});
     s.log = nickOf(s, id) + " saiu do jogo. A rodada continua.";
     if (n < 2) {
@@ -833,7 +891,7 @@ function apply(pid, m){
       s.wins = {}; s.players.forEach(p => s.wins[p.id] = 0); break;
     case "choose": {                     // carta escolhida, antes de alguém ver a mão
       if (s.status !== "playing" || !s.choosing) fail("A carta escolhida já foi definida.");
-      if (!isTurn(s, pid)) fail("Quem escolhe a carta é " + nickOf(s, s.players[s.turn].id) + ".");
+      if (pid !== s.chooser) fail("Quem escolhe a carta é " + nickOf(s, s.chooser) + ".");
       const c = String(m.c || "");
       if (!/^[A23456789TJQK][SHDC]$/.test(c)) fail("Escolha o valor e o naipe.");
       s.chosen = c; s.choosing = false;
@@ -1029,6 +1087,7 @@ function viewFor(pid){
     result: s.status === "roundEnd" ? s.result : null,
     names: s.names || {},
     choosing: s.status === "playing" && !!s.choosing,
+    chooser: s.chooser || null,
     chosen: s.chosen || null,
     initialOpen: s.status === "playing" && !!s.initialOpen,
     openIn: s.initialOpen ? Math.max(0, s.openUntil - Date.now()) : 0,
@@ -1079,7 +1138,6 @@ function botPlay(){
   const p = S.players[S.turn];
   if (!p || !p.bot) return;
   const id = p.id, Jk = S.jokers, h = S.hands[id];
-  if (S.choosing) { hostHandle(id, {a:"choose", c: RANKS[rnd(13)] + SUITS[rnd(4)]}); return; }
   if (preparing(S)) return;
   if (S.phase === "draw" && S.lockUntil && Date.now() < S.lockUntil) { botTimer = setTimeout(botPlay, S.lockUntil - Date.now() + 150); return; }
   if (S.phase === "discard" && S.drawn && S.prizes) {
@@ -1138,9 +1196,14 @@ function scheduleBotPrizes(){
   botPrizeTimer = setTimeout(() => { botPrizeTimer = null; if (S && S.initialOpen) hostHandle(qid, {a:"claim", k}); },
     Math.min(restante, Math.round(BOT_DELAY * (1.2 + Math.random() * 2.5))));
 }
+let botChooseTimer = null;
 function scheduleBot(){
   if (mode !== "host" || !S || S.status !== "playing") return;
   const jitter = () => rnd(Math.max(1, Math.round(BOT_DELAY * .5)));
+  if (S.choosing && !botChooseTimer) {
+    const ch = S.players.find(p => p.id === S.chooser);
+    if (ch && ch.bot) botChooseTimer = setTimeout(() => { botChooseTimer = null; if (S && S.choosing) hostHandle(ch.id, {a:"choose", c: RANKS[rnd(13)] + SUITS[rnd(4)]}); }, BOT_DELAY + jitter());
+  }
   const from = lastDiscarder(S);
   const fresh = S.phase === "draw" && S.discard.length && from;
   if (fresh && !botClaimTimer) {
@@ -1385,6 +1448,30 @@ setInterval(() => {
   }
 }, 1000);
 
+/* =================== alertas grandes =================== */
+let seenRound = null, seenLen = 0, bigQ = [], bigT = null;
+function syncBig(){
+  if (!V || !V.hist) return;
+  if (V.status === "lobby" || V.status === "draft") { seenRound = null; seenLen = 0; return; }
+  if (seenRound !== V.round) { seenRound = V.round; seenLen = V.hist.length; return; }   // ao entrar, não repete o passado
+  const novos = V.hist.slice(seenLen); seenLen = V.hist.length;
+  novos.forEach(e => {
+    if (e.a === "q") bigQ.push({cls:"bad", k:"Batida errada", t:(e.p === V.me ? "Você" : nk(e.p)) + " bateu errado!", d:"Agora só pode bater com carta comprada do monte."});
+    if (e.a === "p") bigQ.push({cls:"win", k:"Prêmio", t:potName(e.k), d:(e.p === V.me ? "Você ganhou" : nk(e.p) + " ganhou") + " +" + e.amt + " fichas (" + reais(e.amt) + ")"});
+  });
+  if (!bigT) nextBig();
+}
+function nextBig(){
+  const el = $("#big"), it = bigQ.shift();
+  if (!it) { el.hidden = true; bigT = null; return; }
+  el.className = "big " + it.cls;
+  el.innerHTML = `<div class="bx"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.t)}</span><span class="d">${esc(it.d)}</span></div>`;
+  el.hidden = false;
+  el.onclick = () => { clearTimeout(bigT); nextBig(); };
+  try { navigator.vibrate && navigator.vibrate(it.cls === "bad" ? [250,120,250] : 200); } catch(e){}
+  bigT = setTimeout(nextBig, 3000);
+}
+
 /* =================== fichas na tela =================== */
 const reais = f => "R$ " + (Math.abs(f) * FICHA).toFixed(2).replace(".", ",");
 const money = f => `<span class="money ${f>0?"pos":f<0?"neg":""}">${f>0?"+":f<0?"−":""}${reais(f)}</span>`;
@@ -1423,13 +1510,13 @@ function prizesHTML(){
   const comCompra = myTurn() && V.phase === "discard" && V.drawn;
   return `<div class="prizes">${POTS.map(k => {
     const amt = V.pots[k] || 0;
-    if (k === "batida") return `<div class="pz bat"><span class="pn">Batida${V.stake && V.stake.cycles ? " ×" + Math.pow(2, V.stake.cycles) : ""}</span><span class="pv">${amt} fichas</span><span class="pw">${reais(amt)} para quem bater</span></div>`;
+    if (k === "batida") return `<div class="pz bat"><span class="pn">Batida${V.stake && V.stake.cycles ? " ×" + Math.pow(2, V.stake.cycles) : ""}</span><span class="pv">${amt} f</span><span class="pw">${reais(amt)}</span></div>`;
     const pr = V.prizes[k], won = pr.winner, asked = pr.cands.includes(V.me);
     const pago = (V.paid || []).includes(k);
     const can = pago && !won && mine && !V.choosing && (V.initialOpen ? (!asked && prizeCheck(k, mine, null, ctx)) : (comCompra && prizeCheck(k, mine, V.drawn, ctx)));
-    const nome = potName(k), extra = k === "escolhida" && V.chosen ? ` · <span style="color:${isRed(V.chosen)?"#f87171":"inherit"}">${cardName(V.chosen + "0")}</span>` : "";
-    const sub = won ? "✓ " + esc(nk(won)) : (V.seated && !pago) ? "você não pagou" : asked ? "você mostrou" : (k === "maior" && V.initialOpen && pr.cands.length ? pr.cands.length + " mostrou" : reais(amt));
-    return `<button class="pz ${won?"won":""} ${can?"can":""}" data-claim="${k}" ${can?"":"disabled"} aria-label="Prêmio ${nome}"><span class="pn">${nome}</span><span class="pv">${amt} f${extra}</span><span class="pw">${sub}</span></button>`;
+    const nome = SHORT[k], extra = k === "escolhida" && V.chosen ? ` <span style="color:${isRed(V.chosen)&&!0?"#f87171":"inherit"}">${cardName(V.chosen + "0")}</span>` : "";
+    const sub = won ? "✓ " + esc(nk(won)) : (V.seated && !pago) ? "não pagou" : asked ? "mostrado" : (k === "maior" && V.initialOpen && pr.cands.length ? pr.cands.length + " mostrou" : reais(amt));
+    return `<button class="pz ${won?"won":""} ${can?"can":""}" data-claim="${k}" ${can?"":"disabled"} aria-label="Prêmio ${potName(k)}"><span class="pn">${nome}</span><span class="pv">${amt} f${extra}</span><span class="pw">${sub}</span></button>`;
   }).join("")}</div>`;
 }
 function payPanelHTML(){
@@ -1450,7 +1537,7 @@ function payPanelHTML(){
   return html;
 }
 function renderChoose(){
-  const ch = V.players[V.turn], eu = !!ch && ch.id === V.me && V.choosing;
+  const ch = V.players.find(p => p.id === V.chooser) || V.players[V.turn], eu = !!ch && ch.id === V.me && V.choosing;
   return `
   ${topHTML(true)}
   ${netHTML()}
@@ -1513,6 +1600,7 @@ function rulesPanel(){
       <li>Na primeira rodada, cada um escolhe uma carta virada: <b>a maior começa comprando</b> (Ás é a maior; empate escolhe de novo). Depois, <b>quem bateu dá as cartas</b> da rodada seguinte.</li>
       <li>2 baralhos, <b>9 cartas</b> para cada um. O jogo começa <b>sem lixo</b>.</li>
       <li>Uma carta é virada: a <b>vira</b>. São <b>coringas</b> a outra cópia da vira e a carta seguinte do mesmo naipe (vira 5♥ → coringas 5♥ e 6♥; vira K♠ → K♠ e A♠).</li>
+      <li>A carta <b>Escolhida</b> é definida por quem começa na 1ª rodada e, nas seguintes, por quem bateu a rodada anterior.</li>
       <li>Na primeira jogada da rodada, quem começa compra do monte. Se não quiser a carta, pode <b>descartá-la e comprar outra</b>.</li>
       <li>Depois, na sua vez, compre do <b>monte</b> ou pegue a carta de cima do <b>lixo</b>, e descarte uma.</li>
       <li>Para <b>bater</b>, logo depois de comprar, as 10 cartas precisam formar <b>3 + 3 + 4</b>. Vale bater com a carta do lixo.</li>
@@ -1613,7 +1701,7 @@ function oppsHTML(){
       ${i===V.dealer?'<span class="dl" title="Deu as cartas">D</span>':""}
       <span class="nm">${p.id===V.me?"Você":esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${(V.burned||[]).includes(p.id)?'<span class="qm" title="Bateu errado">✕</span>':''}</span>
       <span class="backs">${'<i></i>'.repeat(Math.min(p.count,10))}</span>
-      <span class="meta" title="${p.count} cartas"><b>${p.wins}</b> ${p.wins===1?"vitória":"vitórias"}</span></div>`;
+      <span class="meta" title="${p.count} cartas · ${p.wins} vitórias"><b>${(V.chips && V.chips[p.id]) || 0}</b> fichas</span></div>`;
   }
   return `<div class="opps">${out}</div>`;
 }
@@ -1653,7 +1741,7 @@ function renderGame(){
   else status = `Vez de ${who}.`;
   if (V.initialOpen) status = `Prêmios de mão: <b id="cd">${secsLeft(openEnd)}</b> s para mostrar. Depois, ${mine ? "você compra" : who + " compra"}.`;
   else if (locked() && V.phase === "draw") status = mine ? `Sua vez em <b id="cd">${secsLeft(lockEnd)}</b> s…` : `${who} compra em <b id="cd">${secsLeft(lockEnd)}</b> s…`;
-  if (canFora) status = `O ${cardName(V.top)} do lixo fecha a sua batida!`;
+  if (canFora) status = `O ${cardName(V.top)} do lixo fecha a sua batida! Toque em Bater.`;
   if (V.claim) {
     const quem = claimIds.map(id => id === V.me ? "Você" : esc(nk(id))).join(" e ");
     status = iClaimed ? `Você pediu para bater. Conferindo quem tem a preferência…`
@@ -1687,7 +1775,6 @@ function renderGame(){
   ${prizesHTML()}
   ${meIn ? `
   <div class="handwrap">
-    ${canFora ? (iClaimed ? `<button class="fora" disabled>Pedido enviado…</button>` : `<button class="primary fora" id="btnFora">Bater com o ${cardName(V.top)} do lixo${iHavePref?" (você tem a preferência)":""}</button>`) : ""}
     <div class="hand" id="hand">${order.map(c => {
       const m = mark[c];
       const bar = m && (m.kind === "jogo" || m.kind === "par") ? `<span class="gb ${m.kind==="par"?"par":""} ${m.s?"":"jl"} ${m.e?"":"jr"}"></span>` : "";
@@ -1704,9 +1791,9 @@ function renderGame(){
       <button class="ar" id="mvL" aria-label="Mover carta para a esquerda">◀</button>
       <button class="ar" id="mvR" aria-label="Mover carta para a direita">▶</button>
     </div>
-    ${V.canSwap ? `<button class="swap" id="btnSwap">Descartar ${cardName(V.drawn)} e comprar outra</button>` : ""}
-    <div class="actions">
+    <div class="actions ${V.canSwap?"three":""}">
       <button id="btnDesc" ${mine&&V.phase==="discard"&&sel?"":"disabled"}>Descartar${sel?" "+cardName(sel):""}</button>
+      ${V.canSwap ? `<button class="swap" id="btnSwap" title="Descartar a carta comprada e comprar outra">Trocar ${cardName(V.drawn)}</button>` : ""}
       <button id="btnBater" class="primary ${bat||canFora?"ready":""}">Bater</button>
     </div>
   </div>` : ""}`;
@@ -1767,7 +1854,7 @@ function renderWaiting(){
   return `${topHTML(false)}<section class="panel" style="text-align:center"><div class="codebig">${esc(CODE)}</div><p>${esc(net || "Conectando…")}</p><button id="btnLeave2">Voltar</button></section>`;
 }
 function render(){
-  syncClock(); syncTurn(); syncTiming();
+  syncClock(); syncTurn(); syncTiming(); syncBig();
   let html;
   if (mode === "start") html = renderStart();
   else if (!V) html = renderWaiting();
@@ -1780,6 +1867,7 @@ function render(){
   const startVal = $("#startChips") ? $("#startChips").value : null, startEdit = $("#startEdit") ? $("#startEdit").value : null;
   const nickVal = $("#nick") ? $("#nick").value : null, codeVal = $("#code") && $("#code").type !== "hidden" ? $("#code").value : null;
   const trailScroll = $("#trail") ? $("#trail").scrollLeft : 0;
+  app.className = "wrap" + (mode !== "start" && V && V.status === "playing" ? " game" : "");
   app.innerHTML = html;
   if (nickVal !== null && $("#nick")) $("#nick").value = nickVal;
   if (limitVal !== null && $("#limit")) $("#limit").value = limitVal;
