@@ -178,6 +178,26 @@ button.card:active{background:var(--face)}
 @keyframes glow{from{box-shadow:0 0 0 0 rgba(255,122,26,0)}to{box-shadow:0 0 0 6px rgba(255,122,26,.4)}}
 @media (prefers-reduced-motion:reduce){#btnBater.ready{animation:none}.hand .card{transition:none}}
 
+/* sorteio */
+.draft{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;justify-items:center}
+.draft .dc{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;padding:0;min-height:0;width:100%}
+.draft .dc .back,.draft .dc .card{width:100%;max-width:84px}
+.draft .dc .card .r{font-size:clamp(1.1rem,6vw,1.9rem)}
+.draft .dc .card .s{font-size:clamp(1.6rem,9vw,2.8rem)}
+.draft .dc .card .s1{display:none}
+.draft .dc.free .back{box-shadow:0 0 0 2px rgba(255,122,26,.35)}
+.draft .dc:disabled{opacity:1;cursor:default}
+.draft.done .dc:not(.picked){opacity:.35}
+.draft .dc.mine .back,.draft .dc.mine .card{box-shadow:0 0 0 3px var(--o)}
+.draft .dc.win .card{box-shadow:0 0 0 4px var(--o),0 0 28px rgba(255,122,26,.6)}
+.draft .who{font-size:.68rem;font-weight:700;color:var(--muted);min-height:1em;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.draft .dc.mine .who,.draft .dc.win .who{color:var(--o)}
+.ord{display:flex;gap:4px}
+.ord button{min-height:30px;min-width:32px;padding:2px 6px;font-size:.75rem}
+.qm{display:inline-block;font:800 .55rem var(--ui);letter-spacing:.06em;color:#fca5a5;border:1px solid rgba(239,68,68,.5);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:2px}
+.alarm.slow{background:#ef4444;color:#fff}
+.alarm.slow button{background:#fff;color:#b91c1c}
+
 /* lobby e listas */
 .plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .plist li{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;background:var(--s2)}
@@ -394,7 +414,8 @@ document.addEventListener("visibilitychange", () => {
 /* =================== anfitrião: regras do jogo =================== */
 function emptyState(){ return {status:"lobby", players:[], wins:{}, round:0}; }
 const pIdx = (s, id) => s.players.findIndex(p => p.id === id);
-const nickOf = (s, id) => (s.players.find(p => p.id === id) || {}).nick || "Alguém";
+const nickOf = (s, id) => (s.players.find(p => p.id === id) || {}).nick || (s.names && s.names[id]) || "Alguém";
+const remember = (s, id, nick) => { s.names = s.names || {}; s.names[id] = nick; };
 function fail(msg){ throw new Error(msg); }
 function deal(s){
   const deck = newDeck();
@@ -406,10 +427,83 @@ function deal(s){
   s.stock = deck;
   s.turn = (s.dealer + 1) % s.players.length;
   s.phase = "draw"; s.drawn = null; s.status = "playing"; s.result = null;
-  s.first = true; s.canSwap = false; s.claim = null;
+  s.first = true; s.canSwap = false; s.claim = null; s.burned = {}; s.drawnFrom = null;
+  s.turnAt = Date.now(); s.draft = null;
   s.hist = [];
   s.round = (s.round || 0) + 1;
   s.log = "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas.";
+}
+/* ---------- sorteio de quem começa (1ª rodada) ---------- */
+const DRAFT_SIZE = 12;
+const drawVal = c => rk(c) === "A" ? 14 : rv(c);      // Ás é a maior
+function startDraft(s, ids, tie){
+  s.status = "draft";
+  s.draft = {cards: newDeck().slice(0, DRAFT_SIZE), picks: {}, ids: ids.slice(), reveal: false, tie: !!tie, winner: null, next: null};
+  s.log = tie ? "Empate! Quem empatou escolhe de novo." : "Cada um escolhe uma carta. A maior começa comprando.";
+}
+function checkDraft(s){
+  const d = s.draft;
+  if (!d || d.reveal) return;
+  d.ids = d.ids.filter(id => pIdx(s, id) >= 0);
+  if (d.ids.length === 0) { s.status = "lobby"; s.draft = null; return; }
+  if (!d.ids.every(id => d.picks[id] != null)) return;
+  d.reveal = true;
+  const val = id => drawVal(d.cards[d.picks[id]]);
+  const max = Math.max(...d.ids.map(val));
+  const top = d.ids.filter(id => val(id) === max);
+  if (top.length > 1) { d.next = top; s.log = top.map(id => nickOf(s, id)).join(" e ") + " empataram."; }
+  else { d.winner = top[0]; s.log = nickOf(s, top[0]) + " tirou a maior carta e começa comprando!"; }
+}
+let draftTimer = null;
+function scheduleDraft(){
+  if (draftTimer || mode !== "host" || !S || S.status !== "draft" || !S.draft || !S.draft.reveal) return;
+  draftTimer = setTimeout(() => {
+    draftTimer = null;
+    if (mode !== "host" || !S || S.status !== "draft" || !S.draft || !S.draft.reveal) return;
+    const d = S.draft;
+    if (d.next) startDraft(S, d.next, true);
+    else { const i = pIdx(S, d.winner); S.dealer = ((i < 0 ? 0 : i) - 1 + S.players.length) % S.players.length; deal(S); }
+    saveHost(); broadcast();
+  }, window.__draftMs || 3500);
+}
+/* ---------- tirar um jogador do jogo (o jogo continua) ---------- */
+function removePlayer(s, id){
+  const i = pIdx(s, id);
+  if (i < 0) return;
+  remember(s, id, s.players[i].nick);
+  if (s.status === "playing") {
+    const wasTurn = s.turn === i;
+    if (s.hands) delete s.hands[id];
+    s.players.splice(i, 1);
+    const n = s.players.length;
+    if (i < s.turn) s.turn--;
+    if (n) {
+      if (s.turn >= n) s.turn = 0;
+      if (i < s.dealer) s.dealer--; else if (i === s.dealer) s.dealer = (s.dealer - 1 + n) % n;
+      if (s.dealer >= n || s.dealer < 0) s.dealer = 0;
+    }
+    if (wasTurn) { s.phase = "draw"; s.drawn = null; s.canSwap = false; s.first = false; s.turnAt = Date.now(); }
+    if (s.claim) {
+      s.claim.ids = s.claim.ids.filter(x => x !== id);
+      if (!s.claim.ids.length) { s.claim = null; if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; } }
+    }
+    s.hist.push({p:id, a:"x"});
+    s.log = nickOf(s, id) + " saiu do jogo. A rodada continua.";
+    if (n < 2) {
+      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, drawn:null, hist:[], claim:null});
+      s.log = "A rodada foi encerrada: ficou só um jogador.";
+    }
+  } else {
+    s.players.splice(i, 1);
+    if (s.status === "draft") checkDraft(s);
+    if (s.dealer != null && s.dealer >= s.players.length) s.dealer = 0;
+  }
+}
+function burn(s, pid){
+  s.burned = s.burned || {};
+  s.burned[pid] = true;
+  s.hist.push({p:pid, a:"q"});
+  s.log = nickOf(s, pid) + " bateu errado! Agora só pode bater com carta comprada do monte.";
 }
 const isTurn = (s, pid) => s.status === "playing" && s.players[s.turn] && s.players[s.turn].id === pid;
 function refillStock(s){
@@ -422,11 +516,12 @@ function refillStock(s){
 
 function apply(pid, m){
   const s = S;
-  if (s.claim && ["draw","discard","swap","bater"].includes(m.a)) fail("Espere: alguém pediu para bater com o lixo.");
+  if (s.claim && ["draw","discard","swap"].includes(m.a)) fail("Espere: alguém pediu para bater com o lixo.");
   switch (m.a) {
     case "hello": {
       const nk = String(m.nick || "").trim().slice(0,14) || "Jogador";
       const i = pIdx(s, pid);
+      remember(s, pid, nk);
       if (i >= 0) { s.players[i].nick = nk; break; }
       if (s.status !== "lobby") break;
       if (s.players.length >= 6) fail("A mesa já tem 6 jogadores. Você vai assistir.");
@@ -443,7 +538,7 @@ function apply(pid, m){
         const usados = new Set(s.players.map(p => p.nick));
         const nome = BOT_NAMES.find(n => !usados.has(n)) || ("Bot " + (s.players.length + 1));
         const id = "bot-" + Math.random().toString(36).slice(2,8);
-        s.players.push({id, nick: nome, bot: true});
+        s.players.push({id, nick: nome, bot: true}); remember(s, id, nome);
         s.wins[id] = s.wins[id] || 0;
       }
       break;
@@ -451,18 +546,66 @@ function apply(pid, m){
     case "remove":
       if (s.status !== "lobby") fail("Só dá para tirar jogadores antes de começar.");
       if (m.id === PID && pid !== PID) fail("O anfitrião não pode ser tirado.");
-      s.players = s.players.filter(p => p.id !== m.id); break;
-    case "start":
+      removePlayer(s, m.id); break;
+    case "move": {                       // muda a ordem dos jogadores antes da 1ª rodada
+      if (pid !== PID) fail("Só o anfitrião muda a ordem.");
+      if (s.status !== "lobby" || (s.round || 0) > 0) fail("A ordem só muda antes da primeira rodada.");
+      const i = pIdx(s, m.id), j = i + (m.dir < 0 ? -1 : 1);
+      if (i < 0 || j < 0 || j >= s.players.length) return;
+      [s.players[i], s.players[j]] = [s.players[j], s.players[i]];
+      break;
+    }
+    case "hostOut":                      // anfitrião só organiza
+      if (pid !== PID) return;
+      removePlayer(s, PID);
+      if (s.status === "lobby") s.log = "O anfitrião não vai jogar, só organizar.";
+      break;
+    case "hostIn":
+      if (pid !== PID) return;
+      if (s.status !== "lobby") fail("Você pode voltar a jogar quando a rodada acabar e a mesa voltar ao lobby.");
+      if (pIdx(s, PID) >= 0) return;
+      if (s.players.length >= 6) fail("A mesa já tem 6 jogadores.");
+      s.players.push({id: PID, nick: NICK || "Anfitrião"}); remember(s, PID, NICK || "Anfitrião");
+      if (s.wins[PID] == null) s.wins[PID] = 0;
+      break;
+    case "leaveGame":                    // um jogador sai; o jogo continua
+      if (pid === PID) fail("Use 'Não jogar' para sair do jogo e continuar organizando.");
+      removePlayer(s, pid); break;
+    case "kick":
+      if (pid !== PID) fail("Só o anfitrião pode tirar alguém.");
+      if (m.id === PID) return;
+      removePlayer(s, m.id); break;
+    case "start": {
       if (s.status !== "lobby") return;
       if (s.players.length < 2) fail("Precisa de pelo menos 2 jogadores.");
-      if (pIdx(s, pid) < 0) fail("Entre na mesa antes de começar.");
-      s.dealer = rnd(s.players.length); deal(s); break;
-    case "next":
+      if (pid !== PID && pIdx(s, pid) < 0) fail("Entre na mesa antes de começar.");
+      const wi = s.lastWinner ? pIdx(s, s.lastWinner) : -1;
+      if (wi >= 0) { s.dealer = wi; deal(s); }          // quem bateu por último dá as cartas
+      else startDraft(s, s.players.map(p => p.id));     // 1ª rodada: sorteio
+      break;
+    }
+    case "pick": {
+      const d = s.draft;
+      if (s.status !== "draft" || !d || d.reveal) fail("Não é hora de escolher carta.");
+      if (!d.ids.includes(pid)) fail("Você não está nesse sorteio.");
+      if (d.picks[pid] != null) fail("Você já escolheu.");
+      const k = Number(m.i);
+      if (!(k >= 0 && k < d.cards.length) || Object.values(d.picks).includes(k)) fail("Essa carta já foi escolhida.");
+      d.picks[pid] = k;
+      checkDraft(s);
+      break;
+    }
+    case "next": {
       if (s.status !== "roundEnd") return;
-      s.dealer = (s.dealer + 1) % s.players.length; deal(s); break;
+      if (pid !== PID && pIdx(s, pid) < 0) fail("Só quem está na mesa pode seguir.");
+      if (s.players.length < 2) fail("Precisa de pelo menos 2 jogadores.");
+      const wi = s.lastWinner ? pIdx(s, s.lastWinner) : -1;
+      s.dealer = wi >= 0 ? wi : (s.dealer + 1) % s.players.length;   // quem bateu dá as cartas
+      deal(s); break;
+    }
     case "lobby":
-      if (pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
-      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null});
+      if (pid !== PID && pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
+      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null, draft:null});
       break;
     case "clockPause": {
       if (!s.clockStart) fail("O relógio começa na primeira compra de carta.");
@@ -491,7 +634,7 @@ function apply(pid, m){
         c = s.stock.pop();
       }
       if (!s.clockStart) s.clockStart = Date.now();   // relógio começa na primeira compra
-      s.hands[pid].push(c); s.phase = "discard"; s.drawn = c;
+      s.hands[pid].push(c); s.phase = "discard"; s.drawn = c; s.drawnFrom = m.from === "lixo" ? "lixo" : "monte";
       s.canSwap = !!s.first && m.from !== "lixo";
       s.log = nickOf(s, pid) + (m.from === "lixo" ? " pegou " + cardName(c) + " do lixo." : " comprou do monte.");
       break;
@@ -505,7 +648,7 @@ function apply(pid, m){
       s.hist.push({p:pid, a:"t", c:old});
       refillStock(s);
       const c2 = s.stock.pop();
-      h.push(c2); s.drawn = c2; s.canSwap = false;
+      h.push(c2); s.drawn = c2; s.canSwap = false; s.drawnFrom = "monte";
       s.log = nickOf(s, pid) + " descartou " + cardName(old) + " e comprou outra.";
       break;
     }
@@ -516,25 +659,39 @@ function apply(pid, m){
       h.splice(i,1); s.discard.push(m.card);
       s.hist.push({p:pid, a:"d", c:m.card});
       s.turn = (s.turn + 1) % s.players.length; s.phase = "draw"; s.drawn = null;
-      s.first = false; s.canSwap = false;
+      s.first = false; s.canSwap = false; s.turnAt = Date.now();
       s.log = nickOf(s, pid) + " descartou " + cardName(m.card) + ".";
       break;
     }
-    case "bater": {
-      if (!isTurn(s, pid) || s.phase !== "discard") fail("Você só bate logo depois de comprar.");
-      const melds = findBatida(s.hands[pid], s.jokers);
-      if (!melds) fail("Essas 10 cartas ainda não formam 3 + 3 + 4.");
-      const limpa = !!findBatida(s.hands[pid], []);
-      s.wins[pid] = (s.wins[pid] || 0) + 1;
-      s.status = "roundEnd"; s.result = {winner: pid, melds, limpa};
-      s.first = false; s.canSwap = false;
-      s.log = nickOf(s, pid) + " bateu!";
+    case "bater": {                      // botão sempre habilitado; batida errada tem penalidade
+      if (s.status !== "playing") fail("Não há rodada em andamento.");
+      if (pIdx(s, pid) < 0 || !s.hands[pid]) fail("Você não está jogando esta rodada.");
+      const queimado = !!(s.burned && s.burned[pid]);
+      if (isTurn(s, pid) && s.phase === "discard") {
+        const melds = findBatida(s.hands[pid], s.jokers);
+        if (!melds) { burn(s, pid); break; }
+        if (queimado && s.drawnFrom === "lixo") fail("Você bateu errado antes: nesta rodada só pode bater com carta comprada do monte.");
+        const limpa = !!findBatida(s.hands[pid], []);
+        s.wins[pid] = (s.wins[pid] || 0) + 1;
+        s.status = "roundEnd"; s.result = {winner: pid, melds, limpa}; s.lastWinner = pid;
+        s.first = false; s.canSwap = false;
+        s.log = nickOf(s, pid) + " bateu!";
+        break;
+      }
+      const last = s.hist && s.hist[s.hist.length-1];
+      const fresh = s.phase === "draw" && s.discard.length && last && last.a === "d" && last.p !== pid;
+      if (fresh && s.hands[pid].length === 9 && findBatida(s.hands[pid].concat(s.discard[s.discard.length-1]), s.jokers)) {
+        if (queimado) fail("Você bateu errado antes: nesta rodada não pode mais bater com carta do lixo.");
+        return apply(pid, {a:"baterLixo"});
+      }
+      burn(s, pid);
       break;
     }
     case "baterLixo": {
       const last = s.hist && s.hist[s.hist.length-1];
       if (s.status !== "playing" || s.phase !== "draw" || !s.discard.length || !last || last.a !== "d") fail("Não dá para bater com o lixo agora.");
       if (last.p === pid) fail("Você não pode bater com a carta que você mesmo descartou.");
+      if (s.burned && s.burned[pid]) fail("Você bateu errado antes: nesta rodada não pode mais bater com carta do lixo.");
       if (!canBaterLixo(s, pid)) fail("Essa carta não fecha a sua batida.");
       if (!s.claim) s.claim = {ids: [], from: last.p};
       if (!s.claim.ids.includes(pid)) s.claim.ids.push(pid);
@@ -554,7 +711,7 @@ const lastDiscarder = s => { const e = s.hist && s.hist[s.hist.length-1]; return
 function orderDist(s, id, from){ const n = s.players.length; return (pIdx(s, id) - pIdx(s, from) + n) % n; }
 function canBaterLixo(s, id){
   const top = s.discard && s.discard[s.discard.length-1];
-  return !!(top && s.hands && s.hands[id] && s.hands[id].length === 9 && findBatida(s.hands[id].concat(top), s.jokers));
+  return !!(top && s.hands && s.hands[id] && s.hands[id].length === 9 && !(s.burned && s.burned[id]) && findBatida(s.hands[id].concat(top), s.jokers));
 }
 function bestEligible(s){
   const from = s.claim ? s.claim.from : lastDiscarder(s);
@@ -577,7 +734,7 @@ function finishClaim(s){
   s.hist.push({p:pid, a:"l", c:top, fora:true});
   s.wins[pid] = (s.wins[pid] || 0) + 1;
   s.status = "roundEnd";
-  s.result = {winner: pid, melds, limpa: !!findBatida(h10, []), fora, card: top, from, rivals: ids.slice(1)};
+  s.result = {winner: pid, melds, limpa: !!findBatida(h10, []), fora, card: top, from, rivals: ids.slice(1)}; s.lastWinner = pid;
   s.first = false; s.canSwap = false;
   s.log = nickOf(s, pid) + (fora ? " bateu de fora com " : " bateu com ") + cardName(top) + " do lixo!";
 }
@@ -615,6 +772,13 @@ function viewFor(pid){
     claim: s.claim ? {ids: s.claim.ids.slice(), from: s.claim.from} : null,
     clk: {el: s.clockStart ? (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0) : null, lim: s.limitMin || 0, paused: !!s.pausedAt, by: s.clockBy || null},
     result: s.status === "roundEnd" ? s.result : null,
+    names: s.names || {},
+    burned: Object.keys(s.burned || {}),
+    turnEl: s.status === "playing" && s.turnAt ? Date.now() - s.turnAt : null,
+    draft: s.status === "draft" && s.draft ? {
+      n: s.draft.cards.length, ids: s.draft.ids, picks: s.draft.picks, reveal: s.draft.reveal, tie: s.draft.tie,
+      winner: s.draft.winner, next: s.draft.next, faces: s.draft.reveal ? Object.fromEntries(Object.values(s.draft.picks).map(k => [k, s.draft.cards[k]])) : {}
+    } : null,
   };
 }
 /* ---------- bots (jogam no aparelho do anfitrião) ---------- */
@@ -694,10 +858,23 @@ function scheduleBot(){
   if (p && p.bot) botTimer = setTimeout(botPlay, BOT_DELAY + (fresh ? Math.round(BOT_DELAY * 1.3) : 0) + jitter());
 }
 
+let botPickTimer = null;
+function scheduleBotPick(){
+  if (botPickTimer || mode !== "host" || !S || S.status !== "draft" || !S.draft || S.draft.reveal) return;
+  const d = S.draft, bot = S.players.find(p => p.bot && d.ids.includes(p.id) && d.picks[p.id] == null);
+  if (!bot) return;
+  botPickTimer = setTimeout(() => {
+    botPickTimer = null;
+    if (!S || S.status !== "draft" || !S.draft || S.draft.reveal) return;
+    const taken = new Set(Object.values(S.draft.picks).map(Number));
+    const free = [...Array(S.draft.cards.length).keys()].filter(k => !taken.has(k));
+    if (free.length) hostHandle(bot.id, {a:"pick", i: free[rnd(free.length)]});
+  }, Math.round(BOT_DELAY * .6) + rnd(Math.max(1, Math.round(BOT_DELAY * .6))));
+}
 function broadcast(){
   for (const [pid, c] of conns) if (c.open) { try { c.send({t:"view", v: viewFor(pid)}); } catch(e){} }
   V = viewFor(PID); render();
-  scheduleBot();
+  scheduleBot(); scheduleBotPick(); scheduleDraft();
 }
 function saveHost(){ lsSet("cacheta-host", JSON.stringify({code: CODE, pid: PID, s: S})); }
 function migrate(s){
@@ -706,6 +883,9 @@ function migrate(s){
   if (!s.hist) s.hist = [];
   if (!s.discard && s.status === "playing") s.discard = [];
   if (s.claim && s.status === "playing") { try { finishClaim(s); } catch(e) { s.claim = null; } }
+  if (!s.burned) s.burned = {};
+  if (s.status === "playing" && !s.turnAt) s.turnAt = Date.now();
+  if (!s.names) { s.names = {}; s.players.forEach(p => s.names[p.id] = p.nick); }
   return s;
 }
 
@@ -714,7 +894,7 @@ let hostTries = 0;
 function startHost(code, state){
   mode = "host"; CODE = code; S = migrate(state); V = viewFor(PID);
   history.replaceState(null, "", location.pathname + "?mesa=" + CODE);
-  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock(); scheduleBot();
+  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock(); scheduleBot(); scheduleBotPick(); scheduleDraft();
   if (typeof Peer === "undefined") { net = "Sem internet: não consegui carregar a conexão."; render(); return; }
   peer = new Peer(peerIdFor(CODE), PEER_OPTS);
   peer.on("open", () => { hostTries = 0; net = ""; render(); });
@@ -849,6 +1029,7 @@ function beep(){
 }
 function showAlarm(cycles){
   const a = $("#alarm");
+  a.className = "alarm";
   a.innerHTML = `<div><b>Tempo!</b><span>${fmtTime(cycles * clockLim * 60000)} de mesa. O relógio recomeçou.</span></div><button id="alarmOk">OK</button>`;
   a.hidden = false;
   $("#alarmOk").onclick = () => { a.hidden = true; };
@@ -856,6 +1037,35 @@ function showAlarm(cycles){
   beep();
   clearTimeout(alarmT); alarmT = setTimeout(() => a.hidden = true, 20000);
 }
+/* ---------- alarme de demora na vez (1 minuto) ---------- */
+let turnBase = null, turnKey = null, turnAlarmed = 0, turnV = null;
+const SLOW_MS = window.__slowMs || 60000;
+function syncTurn(){
+  if (!V || V === turnV) return;
+  turnV = V;
+  if (V.status !== "playing" || V.turnEl == null) { turnBase = null; turnKey = null; return; }
+  const key = V.round + ":" + V.turn + ":" + (V.hist || []).filter(e => e.a === "d").length;
+  if (key !== turnKey) { turnKey = key; turnAlarmed = 0; }
+  turnBase = Date.now() - V.turnEl;
+}
+function showSlow(mins){
+  const p = V.players[V.turn]; if (!p) return;
+  const eu = p.id === V.me, a = $("#alarm");
+  a.className = "alarm slow";
+  a.innerHTML = `<div><b>${eu ? "Sua vez!" : "Demorando…"}</b><span>${eu ? "Você" : esc(p.nick)} está há mais de ${mins} min na vez.</span></div><button id="alarmOk">OK</button>`;
+  a.hidden = false;
+  $("#alarmOk").onclick = () => { a.hidden = true; };
+  if (eu) { try { navigator.vibrate && navigator.vibrate([400,200,400]); } catch(e){} beep(); }
+  clearTimeout(alarmT); alarmT = setTimeout(() => a.hidden = true, 15000);
+}
+setInterval(() => {
+  if (mode === "start" || !V || V.status !== "playing" || V.claim || turnBase == null) return;
+  const p = V.players[V.turn];
+  if (!p || p.bot) return;
+  const mins = Math.floor((Date.now() - turnBase) / SLOW_MS);
+  if (mins >= 1 && mins > turnAlarmed) { turnAlarmed = mins; showSlow(mins); }
+}, 1000);
+
 setInterval(() => {
   if (mode === "start" || clockBase == null || clockPaused) return;
   const el = clockEl(), limMs = clockLim * 60000;
@@ -870,7 +1080,7 @@ setInterval(() => {
 
 /* =================== desenho =================== */
 const myTurn = () => V && V.status === "playing" && V.players[V.turn] && V.players[V.turn].id === V.me;
-const nk = id => { const p = V && V.players.find(p => p.id === id); return p ? p.nick : "Alguém"; };
+const nk = id => { const p = V && V.players.find(p => p.id === id); return p ? p.nick : (V && V.names && V.names[id]) || "Alguém"; };
 const J = () => (V && V.jokers) || [];
 const isJk = c => isJ(c, J());
 const inner = c => `<span class="r">${rlabel(rk(c))}</span><span class="s1">${SYM[st(c)]}</span><span class="s">${SYM[st(c)]}</span>`;
@@ -910,6 +1120,8 @@ function rulesPanel(){
   return `<section class="panel">
     <h2>Regras desta mesa</h2>
     <ul class="rules">
+      <li>A ordem de jogo é a ordem de entrada na mesa; o anfitrião pode mudá-la antes da primeira rodada.</li>
+      <li>Na primeira rodada, cada um escolhe uma carta virada: <b>a maior começa comprando</b> (Ás é a maior; empate escolhe de novo). Depois, <b>quem bateu dá as cartas</b> da rodada seguinte.</li>
       <li>2 baralhos, <b>9 cartas</b> para cada um. O jogo começa <b>sem lixo</b>.</li>
       <li>Uma carta é virada: a <b>vira</b>. São <b>coringas</b> a outra cópia da vira e a carta seguinte do mesmo naipe (vira 5♥ → coringas 5♥ e 6♥; vira K♠ → K♠ e A♠).</li>
       <li>Na primeira jogada da rodada, quem começa compra do monte. Se não quiser a carta, pode <b>descartá-la e comprar outra</b>.</li>
@@ -918,6 +1130,8 @@ function rulesPanel(){
       <li>Se alguém descartar a carta que fecha a sua batida, você pode <b>bater de fora</b>, mesmo fora da sua vez, até o próximo jogador comprar. Se mais de um pedir, a batida fica com <b>quem vem primeiro na rodada</b> depois de quem descartou (há 3 segundos para os outros pedirem).</li>
       <li><b>Trinca</b>: 3 do mesmo valor e naipes diferentes. <b>Sequência</b>: mesmo naipe, cartas seguidas; Ás vale A-2-3 e Q-K-A, nunca K-A-2.</li>
       <li>Jogo de 4 iguais: trinca de naipes diferentes <b>mais uma repetida</b> (7♠ 7♥ 7♦ 7♠).</li>
+      <li>O botão Bater fica sempre liberado. <b>Bateu errado?</b> Até o fim da rodada você só pode bater com carta comprada do monte, nunca com carta do lixo.</li>
+      <li>Se alguém demorar mais de 1 minuto na vez, um alarme aparece na tela.</li>
       <li>Cada batida vale <b>1 vitória</b> no placar.</li>
     </ul>
   </section>`;
@@ -957,6 +1171,7 @@ function renderStart(){
 }
 function renderLobby(){
   const inTable = V.players.some(p => p.id === V.me);
+  const canOrder = mode === "host" && !V.round && V.players.length > 1;
   return `
   ${topHTML(false)}
   ${netHTML()}
@@ -968,11 +1183,13 @@ function renderLobby(){
   </section>
   <section class="panel">
     <div class="row" style="justify-content:space-between"><h2>Na mesa</h2><span class="muted">${V.players.length}/6</span></div>
-    <ul class="plist">${V.players.map(p => `<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
-    ${!inTable ? `<p class="muted" style="margin:0">A mesa está cheia ou a partida já começou. Você está assistindo.</p>` : ""}
+    <p class="muted" style="margin:0;font-size:.8rem">A ordem da lista é a ordem de jogo.${canOrder ? " Use ▲ ▼ para mudar antes da primeira rodada." : ""}</p>
+    <ul class="plist">${V.players.map((p,i) => `<li><span class="dot ${p.online?"":"off"}"></span><span class="muted" style="font-variant-numeric:tabular-nums;font-size:.8rem">${i+1}.</span><span class="n">${esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${canOrder?`<span class="ord"><button data-mv="${esc(p.id)}" data-d="-1" ${i===0?"disabled":""} aria-label="Subir">▲</button><button data-mv="${esc(p.id)}" data-d="1" ${i===V.players.length-1?"disabled":""} aria-label="Descer">▼</button></span>`:""}${p.id===V.host&&mode==="host"?`<button id="btnHostOut">Não jogar</button>`:p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
+    ${mode==="host" && !inTable ? `<div class="row"><span class="muted grow" style="font-size:.85rem">Você está só organizando a mesa.</span><button id="btnHostIn">Entrar no jogo</button></div>` : ""}
+    ${mode!=="host" && !inTable ? `<p class="muted" style="margin:0">A mesa está cheia ou a partida já começou. Você está assistindo.</p>` : ""}
     ${mode==="host" && V.players.length<6 ? `<div class="row"><button class="grow" id="btnBot">+ Adicionar bot</button><button class="grow" id="btnBotFill">Completar com bots</button></div>
     <p class="muted" style="margin:0;font-size:.8rem">Os bots jogam sozinhos, no seu aparelho. Dá para jogar só você contra eles, até sem internet.</p>` : ""}
-    <button class="primary" id="btnStart" ${V.players.length<2||!inTable?"disabled":""}>Dar as cartas</button>
+    <button class="primary" id="btnStart" ${V.players.length<2||(!inTable&&mode!=="host")?"disabled":""}>${V.round ? "Dar as cartas" : "Sortear quem começa"}</button>
     ${V.players.some(p=>p.wins>0) ? `<button id="btnZerar">Zerar placar</button>` : ""}
   </section>
   <section class="panel">
@@ -990,7 +1207,7 @@ function oppsHTML(){
     const i = (start + k) % n, p = V.players[i];
     out += `<div class="opp ${V.status==="playing"&&V.turn===i?"turn":""} ${p.online?"":"off"}">
       ${i===V.dealer?'<span class="dl" title="Deu as cartas">D</span>':""}
-      <span class="nm">${p.id===V.me?"Você":esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}</span>
+      <span class="nm">${p.id===V.me?"Você":esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${(V.burned||[]).includes(p.id)?'<span class="qm" title="Bateu errado">✕</span>':''}</span>
       <span class="backs">${'<i></i>'.repeat(Math.min(p.count,10))}</span>
       <span class="meta" title="${p.count} cartas"><b>${p.wins}</b> ${p.wins===1?"vitória":"vitórias"}</span></div>`;
   }
@@ -1016,7 +1233,8 @@ function renderGame(){
   const bat = mine && V.phase === "discard" ? findBatida(V.hand, Jk) : null;
   const lastEv = V.hist && V.hist[V.hist.length-1];
   const freshTop = V.phase === "draw" && V.top && lastEv && lastEv.a === "d" && lastEv.c === V.top;
-  const canFora = meIn && freshTop && lastEv.p !== V.me && V.hand.length === 9 && !!findBatida(V.hand.concat(V.top), Jk);
+  const iBurned = (V.burned || []).includes(V.me);
+  const canFora = meIn && !iBurned && freshTop && lastEv.p !== V.me && V.hand.length === 9 && !!findBatida(V.hand.concat(V.top), Jk);
   const claimIds = (V.claim && V.claim.ids) || [];
   const iClaimed = claimIds.includes(V.me);
   const dOf = id => { const n = V.players.length, i = V.players.findIndex(p => p.id === id), f = V.players.findIndex(p => p.id === (V.claim ? V.claim.from : lastEv && lastEv.p)); return (i - f + n) % n; };
@@ -1067,6 +1285,7 @@ function renderGame(){
       const nb = c === V.drawn ? '<span class="nb">nova</span>' : "";
       return cardBtn(c, c===sel?"sel":"", nb + bar);
     }).join("")}</div>
+    ${iBurned ? `<div class="gsum" style="color:#fca5a5">Você bateu errado: nesta rodada só bate com carta comprada do monte.</div>` : ""}
     <div class="gsum">${gsum || (sel ? "Use ◀ ▶ para mudar a carta de lugar." : "Toque numa carta para escolher.")}</div>
     <div class="seg">
       <button data-sort="jogos" class="${sortMode==="jogos"?"on":""}" aria-pressed="${sortMode==="jogos"}">Jogos</button>
@@ -1079,14 +1298,13 @@ function renderGame(){
     ${V.canSwap ? `<button class="swap" id="btnSwap">Descartar ${cardName(V.drawn)} e comprar outra</button>` : ""}
     <div class="actions">
       <button id="btnDesc" ${mine&&V.phase==="discard"&&sel?"":"disabled"}>Descartar${sel?" "+cardName(sel):""}</button>
-      <button id="btnBater" class="primary ${bat?"ready":""}" ${bat?"":"disabled"}>Bater</button>
+      <button id="btnBater" class="primary ${bat||canFora?"ready":""}">Bater</button>
     </div>
   </div>` : ""}`;
 }
 function renderEnd(){
   const r = V.result;
   const rows = [...V.players].sort((a,b) => b.wins - a.wins);
-  const nextDealer = V.players[(V.dealer+1) % V.players.length];
   const inTable = V.players.some(p => p.id === V.me);
   return `
   ${topHTML(true)}
@@ -1101,19 +1319,43 @@ function renderEnd(){
   <section class="panel">
     <h2>Placar</h2>
     <table class="score">${rows.map(p=>`<tr><td>${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</td><td>${p.wins}</td></tr>`).join("")}</table>
-    ${inTable ? `<button class="primary" id="btnNext">Próxima rodada · ${esc(nextDealer.nick)} dá as cartas</button>` : ""}
+    ${inTable || mode === "host" ? `<button class="primary" id="btnNext">Próxima rodada · ${esc(nk(r.winner))} dá as cartas</button>` : ""}
+  </section>`;
+}
+function renderDraft(){
+  const d = V.draft, mine = d.picks[V.me];
+  const inDraft = d.ids.includes(V.me);
+  const byCard = {}; Object.entries(d.picks).forEach(([id,k]) => byCard[k] = id);
+  const faltam = d.ids.filter(id => d.picks[id] == null).map(id => esc(nk(id)));
+  let msg;
+  if (d.reveal) msg = d.winner ? `<b style="color:var(--o)">${esc(nk(d.winner))}</b> tirou a maior carta e começa comprando!` : `Empate entre ${d.next.map(id=>esc(nk(id))).join(" e ")}. Eles escolhem de novo…`;
+  else if (inDraft && mine == null) msg = `Escolha uma carta virada. A maior começa comprando (Ás é a maior).`;
+  else msg = `Esperando: ${faltam.join(", ")}`;
+  return `
+  ${topHTML(false)}
+  ${netHTML()}
+  <section class="panel">
+    <div class="eyebrow">${d.tie ? "Desempate" : "Primeira rodada"}</div>
+    <h2>Quem começa?</h2>
+    <div class="status ${inDraft&&mine==null&&!d.reveal?"mine":""}" style="text-align:left">${msg}</div>
+    <div class="draft ${d.reveal?"done":""}">${[...Array(d.n).keys()].map(k => {
+      const who = byCard[k], face = d.faces[k];
+      const cls = (who ? "picked " : "") + (who === V.me ? "mine " : "") + (d.reveal && who && who === d.winner ? "win " : "") + (!who && inDraft && mine == null && !d.reveal ? "free" : "");
+      return `<button class="dc ${cls}" data-pick="${k}" ${who || !inDraft || mine != null || d.reveal ? "disabled" : ""} aria-label="Carta ${k+1}">${face ? cardHTML(face) : '<div class="back"></div>'}<span class="who">${who ? esc(nk(who)) : ""}</span></button>`;
+    }).join("")}</div>
   </section>`;
 }
 function renderWaiting(){
   return `${topHTML(false)}<section class="panel" style="text-align:center"><div class="codebig">${esc(CODE)}</div><p>${esc(net || "Conectando…")}</p><button id="btnLeave2">Voltar</button></section>`;
 }
 function render(){
-  syncClock();
+  syncClock(); syncTurn();
   let html;
   if (mode === "start") html = renderStart();
   else if (!V) html = renderWaiting();
   else if (V.status === "playing") html = renderGame();
   else if (V.status === "roundEnd") html = renderEnd();
+  else if (V.status === "draft" && V.draft) html = renderDraft();
   else html = renderLobby();
   const keepFocus = document.activeElement && document.activeElement.id;
   const limitVal = $("#limit") ? $("#limit").value : null, limEdit = $("#limEdit") ? $("#limEdit").value : null;
@@ -1135,6 +1377,8 @@ function evText(e){
   if (e.a === "t") return `${who} recusou a 1ª carta e descartou ${cardName(e.c)}`;
   if (e.a === "l") return `<span class="lx">${who} ${e.fora?"bateu com":"pegou"} ${cardName(e.c)} do lixo</span>`;
   if (e.a === "r") return `O lixo foi embaralhado e virou monte`;
+  if (e.a === "x") return `${who} saiu do jogo`;
+  if (e.a === "q") return `<span style="color:#fca5a5">${who} bateu errado</span>`;
   return "";
 }
 function openHist(){
@@ -1170,7 +1414,9 @@ function openMenu(){
   const inTable = V && V.players.some(p => p.id === V.me);
   d.innerHTML = `<div class="sheet" role="dialog" aria-label="Mesa">
     <div class="row" style="justify-content:space-between"><h2>Mesa ${esc(CODE)}</h2><button id="mClose">Fechar</button></div>
-    ${V ? `<ul class="plist">${V.players.map(p=>`<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</span><span class="w">${p.wins} vit.</span></li>`).join("")}</ul>` : ""}
+    ${V ? `<ul class="plist">${V.players.map(p=>`<li><span class="dot ${p.online?"":"off"}"></span><span class="n">${esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${p.id===V.me?' <span class="muted">(você)</span>':''}</span><span class="w">${p.wins} vit.</span>${isHost && p.id!==V.me && V.status!=="lobby" ? `<button data-kick="${esc(p.id)}">Tirar</button>` : ""}</li>`).join("")}</ul>
+    ${isHost && V.status!=="lobby" ? `<p class="muted" style="margin:0;font-size:.8rem">Tirar um jogador (por exemplo, quem caiu e não volta) faz o jogo seguir sem ele.</p>` : ""}` : ""}
+    ${isHost && inTable && V.status!=="lobby" ? `<button id="mHostOut">Parar de jogar (continuar organizando)</button>` : ""}
     ${clockBase != null ? `<div class="muted" style="font-size:.88rem">Relógio da mesa: <b style="color:var(--text)">${fmtTime(clockEl())}</b>${clockPaused ? " (pausado)" : ""}${clockLim ? ` · alerta a cada ${clockLim} min` : ""}</div>
     <button id="mPause">${clockPaused ? "Retomar relógio" : "Pausar relógio"}</button>` : ""}
     <button id="mCopy">Copiar convite</button>
@@ -1178,7 +1424,7 @@ function openMenu(){
       ? `<div class="row"><span class="grow">Encerrar a partida para todos? O placar fica.</span><button class="danger" id="mReset">Encerrar</button><button id="mCancel">Cancelar</button></div>`
       : `<button class="danger" id="mAsk">Encerrar partida e voltar ao lobby</button>`) : ""}
     ${confirmLeave
-      ? `<div class="row"><span class="grow">${isHost ? "Fechar a mesa? Todo mundo será desconectado." : "Sair desta mesa?"}</span><button class="danger" id="mLeave">Sair</button><button id="mCancel2">Cancelar</button></div>`
+      ? `<div class="row"><span class="grow">${isHost ? "Fechar a mesa? Todo mundo será desconectado." : "Sair desta mesa? O jogo continua sem você."}</span><button class="danger" id="mLeave">Sair</button><button id="mCancel2">Cancelar</button></div>`
       : `<button id="mAskLeave">${isHost ? "Fechar a mesa" : "Sair da mesa"}</button>`}
     <p class="muted" style="margin:0;font-size:.82rem">${isHost ? "Você é o anfitrião: mantenha o app aberto enquanto jogam." : "Se a conexão cair, o app tenta voltar sozinho."}</p>
     ${rulesPanel()}
@@ -1194,7 +1440,9 @@ function openMenu(){
   on("#mReset", () => { closeDrawer(); act("lobby"); });
   on("#mAskLeave", () => { confirmLeave = true; openMenu(); });
   on("#mCancel2", () => { confirmLeave = false; openMenu(); });
-  on("#mLeave", () => { closeDrawer(); leave(); });
+  on("#mLeave", () => { closeDrawer(); if (mode === "client" && V && V.players.some(p => p.id === V.me)) { act("leaveGame"); setTimeout(leave, 400); } else leave(); });
+  on("#mHostOut", () => { closeDrawer(); act("hostOut"); });
+  d.querySelectorAll("[data-kick]").forEach(b => b.onclick = () => act("kick", {id: b.dataset.kick}));
 }
 function copyInvite(){
   const txt = IS_APP ? "Bora jogar cacheta no PiFengy! Abre o app e entra na mesa " + CODE : "Bora jogar cacheta no PiFengy! Entra na mesa " + CODE + ": " + inviteLink();
@@ -1248,6 +1496,9 @@ function bind(){
   on("#btnSwap", () => { sel = null; act("swap"); });
   on("#btnDesc", () => { if (sel) { const c = sel; sel = null; act("discard", {card:c}); } });
   on("#btnBater", () => act("bater"));
+  on("#btnHostOut", () => act("hostOut")); on("#btnHostIn", () => act("hostIn"));
+  document.querySelectorAll("[data-mv]").forEach(b => b.onclick = () => act("move", {id: b.dataset.mv, dir: Number(b.dataset.d)}));
+  document.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => act("pick", {i: Number(b.dataset.pick)}));
   on("#btnFora", () => act("baterLixo"));
   const h = $("#hand");
   if (h) h.onclick = e => { const b = e.target.closest("[data-card]"); if (!b) return; sel = sel === b.dataset.card ? null : b.dataset.card; render(); };
