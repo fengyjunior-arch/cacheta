@@ -198,6 +198,29 @@ button.card:active{background:var(--face)}
 .alarm.slow{background:#ef4444;color:#fff}
 .alarm.slow button{background:#fff;color:#b91c1c}
 
+/* prêmios */
+.prizes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.pz{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-height:0;padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:var(--s1);text-align:left;min-width:0;color:var(--text)}
+.pz.bat{grid-column:span 2;background:linear-gradient(135deg,rgba(255,122,26,.22),rgba(255,122,26,.06));border-color:rgba(255,122,26,.45)}
+.pz .pn{font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pz .pv{font-weight:800;font-variant-numeric:tabular-nums;font-size:.95rem}
+.pz .pw{font-size:.66rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pz.bat .pv{font-size:1.15rem;color:var(--o)}
+.pz:disabled{opacity:1;cursor:default}
+.pz.won{opacity:.45}
+.pz.won .pw{color:var(--o);font-weight:700}
+.pz.can{border-color:var(--o);background:var(--o);color:var(--o-ink);animation:glow 1s ease-in-out infinite alternate;cursor:pointer}
+.pz.can .pn,.pz.can .pw{color:var(--o-ink)}
+@media (prefers-reduced-motion:reduce){.pz.can{animation:none}}
+.pick-r{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.pick-s{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.pick-r button,.pick-s button{min-height:46px;padding:4px;font-family:var(--display);font-weight:900;font-size:1.15rem}
+.pick-s button{font-size:1.6rem;font-family:var(--ui)}
+.pick-s button.red{color:#f87171}
+.pick-r button.on,.pick-s button.on{background:var(--o);color:var(--o-ink);border-color:var(--o)}
+.money{font-variant-numeric:tabular-nums;font-weight:800}
+.money.pos{color:#4ade80}.money.neg{color:#f87171}
+
 /* lobby e listas */
 .plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .plist li{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;background:var(--s2)}
@@ -297,6 +320,49 @@ function findBatida(hand, J){
     }
   }
   return null;
+}
+
+/* ---------- prêmios ---------- */
+const PRIZES = [
+  {k:"maior", n:"Maior"}, {k:"asCopas", n:"Ás de Copas"}, {k:"seisNove", n:"6 e 9"},
+  {k:"sequencia", n:"Sequência"}, {k:"duplicada", n:"Duplicada"}, {k:"escolhida", n:"Escolhida"}];
+const POTS = ["batida", ...PRIZES.map(p => p.k)];
+const potName = k => k === "batida" ? "Batida" : PRIZES.find(p => p.k === k).n;
+const FICHA = 0.10;
+// devolve um número > 0 quando a mão tem o prêmio; com "d", o prêmio precisa usar a carta comprada d
+function prizeCheck(k, hand, d, ctx){
+  if (!hand) return 0;
+  const id2 = c => c.slice(0,2);
+  switch (k) {
+    case "maior": {
+      const su = ctx.vira && st(ctx.vira), ok = c => st(c) === su && rv(c) <= 10;   // Ás a 10; 10 é a maior
+      if (d) return ok(d) ? rv(d) : 0;
+      return Math.max(0, ...hand.filter(ok).map(rv));
+    }
+    case "asCopas": return d ? (id2(d) === "AH" ? 1 : 0) : (hand.some(c => id2(c) === "AH") ? 1 : 0);
+    case "seisNove": {
+      const par = su => hand.some(c => id2(c) === "6" + su) && hand.some(c => id2(c) === "9" + su);
+      if (d) return (rk(d) === "6" || rk(d) === "9") && par(st(d)) ? 1 : 0;
+      return [...SUITS].some(par) ? 1 : 0;
+    }
+    case "sequencia": {                                   // 4 seguidas do mesmo naipe, sem coringa substituir
+      const runs = [];
+      for (const su of SUITS) {
+        const vals = new Set(hand.filter(c => st(c) === su).flatMap(c => rk(c) === "A" ? [1,14] : [rv(c)]));
+        for (let a = 1; a <= 11; a++) if ([0,1,2,3].every(i => vals.has(a + i))) runs.push({su, a});
+      }
+      if (!d) return runs.length ? 1 : 0;
+      const dv = rk(d) === "A" ? [1,14] : [rv(d)];
+      return runs.some(q => q.su === st(d) && dv.some(v => v >= q.a && v <= q.a + 3)) ? 1 : 0;
+    }
+    case "duplicada":
+      if (d) return hand.some(c => c !== d && id2(c) === id2(d)) ? 1 : 0;
+      return hand.some((c,i) => hand.some((x,j) => j !== i && id2(x) === id2(c))) ? 1 : 0;
+    case "escolhida":
+      if (!ctx.chosen) return 0;
+      return d ? (id2(d) === ctx.chosen ? 1 : 0) : (hand.some(c => id2(c) === ctx.chosen) ? 1 : 0);
+  }
+  return 0;
 }
 
 /* ---------- agrupar a mão em jogos ---------- */
@@ -430,9 +496,74 @@ function deal(s){
   s.first = true; s.canSwap = false; s.claim = null; s.burned = {}; s.drawnFrom = null;
   s.turnAt = Date.now(); s.draft = null;
   s.hist = [];
+  s.choosing = true; s.chosen = null; s.initialOpen = false; s.openUntil = 0; s.lockUntil = 0;
+  s.prizes = {}; PRIZES.forEach(p => s.prizes[p.k] = {winner: null, cands: []});
+  setupPots(s);
   s.round = (s.round || 0) + 1;
   s.log = "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas.";
 }
+/* ---------- fichas e montes ---------- */
+const OPEN_MS = window.__openMs || 10000;   // prêmios de mão antes da primeira compra
+const LOCK_MS = window.__lockMs || 3000;    // espera depois de cada descarte
+function clockCycles(s){
+  if (!s.clockStart || !s.limitMin) return 0;
+  const el = (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0);
+  return Math.min(10, Math.max(0, Math.floor(el / (s.limitMin * 60000))));
+}
+function setupPots(s){
+  if (s.pots && !s.settled) settle(s, null);
+  const cycles = clockCycles(s), b = 2 * Math.pow(2, cycles), h = b / 2;
+  s.stake = {b, h, cycles};
+  s.chips = s.chips || {};
+  s.pots = {}; s.settled = false; s.lastSettle = null;
+  POTS.forEach(k => s.pots[k] = {amt: 0, payers: {}, paid: null});
+  s.players.forEach(p => POTS.forEach(k => {
+    const v = k === "batida" ? b : h;
+    s.pots[k].amt += v; s.pots[k].payers[p.id] = v;
+    s.chips[p.id] = (s.chips[p.id] || 0) - v;
+  }));
+}
+function payPot(s, k, pid){
+  const pot = s.pots && s.pots[k];
+  if (!pot || pot.paid) return 0;
+  pot.paid = pid; s.chips[pid] = (s.chips[pid] || 0) + pot.amt;
+  return pot.amt;
+}
+function settle(s, winner){                 // fecha a rodada: Batida para quem bateu, o resto volta
+  if (!s.pots || s.settled) return;
+  const sum = {won: [], back: []};
+  if (winner) { const a = payPot(s, "batida", winner); sum.won.push({k:"batida", p:winner, amt:a}); }
+  POTS.forEach(k => {
+    const pot = s.pots[k];
+    if (pot.paid) { if (k !== "batida") sum.won.push({k, p:pot.paid, amt:pot.amt}); return; }
+    Object.entries(pot.payers).forEach(([id, v]) => s.chips[id] = (s.chips[id] || 0) + v);
+    pot.paid = "devolvido"; sum.back.push(k);
+  });
+  s.settled = true; s.lastSettle = sum;
+}
+function awardPrize(s, k, pid){
+  s.prizes[k].winner = pid;
+  const amt = payPot(s, k, pid);
+  s.hist.push({p:pid, a:"p", k, amt});
+  s.log = nickOf(s, pid) + " ganhou o prêmio " + potName(k) + " (+" + amt + " fichas)!";
+}
+function closeInitial(s){
+  if (!s.initialOpen) return;
+  s.initialOpen = false;
+  const pr = s.prizes.maior, c = pr.cands.filter(x => pIdx(s, x.p) >= 0);
+  if (!pr.winner && c.length) awardPrize(s, "maior", c.reduce((a, x) => x.v > a.v ? x : a).p);
+  else s.log = "Compras liberadas!";
+  s.turnAt = Date.now();
+}
+let openTimer = null;
+function scheduleOpen(){
+  if (openTimer || mode !== "host" || !S || S.status !== "playing" || !S.initialOpen) return;
+  openTimer = setTimeout(() => {
+    openTimer = null;
+    if (mode === "host" && S && S.status === "playing" && S.initialOpen) { closeInitial(S); saveHost(); broadcast(); }
+  }, Math.max(0, S.openUntil - Date.now()));
+}
+
 /* ---------- sorteio de quem começa (1ª rodada) ---------- */
 const DRAFT_SIZE = 12;
 const drawVal = c => rk(c) === "A" ? 14 : rv(c);      // Ás é a maior
@@ -482,7 +613,7 @@ function removePlayer(s, id){
       if (i < s.dealer) s.dealer--; else if (i === s.dealer) s.dealer = (s.dealer - 1 + n) % n;
       if (s.dealer >= n || s.dealer < 0) s.dealer = 0;
     }
-    if (wasTurn) { s.phase = "draw"; s.drawn = null; s.canSwap = false; s.first = false; s.turnAt = Date.now(); }
+    if (wasTurn) { s.phase = "draw"; s.drawn = null; s.canSwap = false; s.first = s.choosing ? s.first : false; s.turnAt = Date.now(); }
     if (s.claim) {
       s.claim.ids = s.claim.ids.filter(x => x !== id);
       if (!s.claim.ids.length) { s.claim = null; if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; } }
@@ -490,6 +621,7 @@ function removePlayer(s, id){
     s.hist.push({p:id, a:"x"});
     s.log = nickOf(s, id) + " saiu do jogo. A rodada continua.";
     if (n < 2) {
+      settle(s, null);
       Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, drawn:null, hist:[], claim:null});
       s.log = "A rodada foi encerrada: ficou só um jogador.";
     }
@@ -605,6 +737,7 @@ function apply(pid, m){
     }
     case "lobby":
       if (pid !== PID && pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
+      if (s.status === "playing") settle(s, null);
       Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null, draft:null});
       break;
     case "clockPause": {
@@ -622,8 +755,42 @@ function apply(pid, m){
       break;
     case "zerar":
       s.wins = {}; s.players.forEach(p => s.wins[p.id] = 0); break;
+    case "choose": {                     // carta escolhida, antes de alguém ver a mão
+      if (s.status !== "playing" || !s.choosing) fail("A carta escolhida já foi definida.");
+      if (!isTurn(s, pid)) fail("Quem escolhe a carta é " + nickOf(s, s.players[s.turn].id) + ".");
+      const c = String(m.c || "");
+      if (!/^[A23456789TJQK][SHDC]$/.test(c)) fail("Escolha o valor e o naipe.");
+      s.chosen = c; s.choosing = false; s.initialOpen = true;
+      s.openUntil = Date.now() + OPEN_MS; s.lockUntil = s.openUntil; s.turnAt = s.openUntil;
+      s.log = nickOf(s, pid) + " escolheu " + cardName(c + "0") + ". Prêmios de mão valem por " + Math.round(OPEN_MS/1000) + " s!";
+      break;
+    }
+    case "claim": {
+      const k = m.k, pr = s.prizes && s.prizes[k];
+      if (s.status !== "playing" || !pr) fail("Esse prêmio não está disponível.");
+      if (s.choosing) fail("Espere a carta escolhida.");
+      if (pr.winner) fail("Esse prêmio já saiu para " + nickOf(s, pr.winner) + ".");
+      const H = s.hands[pid];
+      if (!H) fail("Você não está jogando esta rodada.");
+      const ctx = {vira: s.vira, chosen: s.chosen};
+      if (s.initialOpen) {
+        const v = prizeCheck(k, H, null, ctx);
+        if (!v) fail("Sua mão não tem o prêmio " + potName(k) + ".");
+        if (k === "maior") {
+          if (!pr.cands.some(x => x.p === pid)) pr.cands.push({p:pid, v});
+          s.log = nickOf(s, pid) + " mostrou carta para o Maior.";
+          break;
+        }
+        awardPrize(s, k, pid); break;
+      }
+      if (!(isTurn(s, pid) && s.phase === "discard" && s.drawn)) fail("Agora só vale prêmio com a carta que você acabou de comprar.");
+      if (!prizeCheck(k, H, s.drawn, ctx)) fail("A carta comprada não forma o prêmio " + potName(k) + ".");
+      awardPrize(s, k, pid); break;
+    }
     case "draw": {
       if (!isTurn(s, pid) || s.phase !== "draw") fail("Não é hora de comprar.");
+      if (s.choosing) fail("Espere a carta escolhida.");
+      if (s.lockUntil && Date.now() < s.lockUntil) fail("Aguarde " + Math.ceil((s.lockUntil - Date.now())/1000) + " s para comprar.");
       let c;
       if (m.from === "lixo") {
         if (!s.discard.length) fail("O lixo está vazio.");
@@ -659,12 +826,13 @@ function apply(pid, m){
       h.splice(i,1); s.discard.push(m.card);
       s.hist.push({p:pid, a:"d", c:m.card});
       s.turn = (s.turn + 1) % s.players.length; s.phase = "draw"; s.drawn = null;
-      s.first = false; s.canSwap = false; s.turnAt = Date.now();
+      s.first = false; s.canSwap = false; s.lockUntil = Date.now() + LOCK_MS; s.turnAt = s.lockUntil;
       s.log = nickOf(s, pid) + " descartou " + cardName(m.card) + ".";
       break;
     }
     case "bater": {                      // botão sempre habilitado; batida errada tem penalidade
       if (s.status !== "playing") fail("Não há rodada em andamento.");
+      if (s.choosing) fail("Espere a carta escolhida.");
       if (pIdx(s, pid) < 0 || !s.hands[pid]) fail("Você não está jogando esta rodada.");
       const queimado = !!(s.burned && s.burned[pid]);
       if (isTurn(s, pid) && s.phase === "discard") {
@@ -673,7 +841,7 @@ function apply(pid, m){
         if (queimado && s.drawnFrom === "lixo") fail("Você bateu errado antes: nesta rodada só pode bater com carta comprada do monte.");
         const limpa = !!findBatida(s.hands[pid], []);
         s.wins[pid] = (s.wins[pid] || 0) + 1;
-        s.status = "roundEnd"; s.result = {winner: pid, melds, limpa}; s.lastWinner = pid;
+        s.status = "roundEnd"; s.result = {winner: pid, melds, limpa}; s.lastWinner = pid; settle(s, pid);
         s.first = false; s.canSwap = false;
         s.log = nickOf(s, pid) + " bateu!";
         break;
@@ -734,7 +902,7 @@ function finishClaim(s){
   s.hist.push({p:pid, a:"l", c:top, fora:true});
   s.wins[pid] = (s.wins[pid] || 0) + 1;
   s.status = "roundEnd";
-  s.result = {winner: pid, melds, limpa: !!findBatida(h10, []), fora, card: top, from, rivals: ids.slice(1)}; s.lastWinner = pid;
+  s.result = {winner: pid, melds, limpa: !!findBatida(h10, []), fora, card: top, from, rivals: ids.slice(1)}; s.lastWinner = pid; settle(s, pid);
   s.first = false; s.canSwap = false;
   s.log = nickOf(s, pid) + (fora ? " bateu de fora com " : " bateu com ") + cardName(top) + " do lixo!";
 }
@@ -762,7 +930,8 @@ function viewFor(pid){
     players: s.players.map(p => ({id:p.id, nick:p.nick, bot:!!p.bot, wins:s.wins[p.id]||0,
       count: s.hands && s.hands[p.id] ? s.hands[p.id].length : 0,
       online: p.bot || p.id === PID || !!(conns.get(p.id) && conns.get(p.id).open)})),
-    hand: mine ? mine.slice() : null,
+    hand: mine && !s.choosing ? mine.slice() : null,
+    seated: !!mine,
     top: s.discard && s.discard.length ? s.discard[s.discard.length-1] : null,
     stock: s.stock ? s.stock.length : 0,
     vira: s.vira || null, jokers: s.jokers || [],
@@ -773,6 +942,16 @@ function viewFor(pid){
     clk: {el: s.clockStart ? (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0) : null, lim: s.limitMin || 0, paused: !!s.pausedAt, by: s.clockBy || null},
     result: s.status === "roundEnd" ? s.result : null,
     names: s.names || {},
+    choosing: s.status === "playing" && !!s.choosing,
+    chosen: s.chosen || null,
+    initialOpen: s.status === "playing" && !!s.initialOpen,
+    openIn: s.initialOpen ? Math.max(0, s.openUntil - Date.now()) : 0,
+    lockIn: s.status === "playing" && s.lockUntil ? Math.max(0, s.lockUntil - Date.now()) : 0,
+    prizes: s.prizes ? Object.fromEntries(PRIZES.map(p => [p.k, {winner: s.prizes[p.k].winner, cands: s.prizes[p.k].cands.map(x => x.p)}])) : null,
+    pots: s.pots ? Object.fromEntries(POTS.map(k => [k, s.pots[k].amt])) : null,
+    stake: s.stake || null,
+    chips: s.chips || {},
+    settle: s.status === "roundEnd" ? s.lastSettle : null,
     burned: Object.keys(s.burned || {}),
     turnEl: s.status === "playing" && s.turnAt ? Date.now() - s.turnAt : null,
     draft: s.status === "draft" && s.draft ? {
@@ -810,6 +989,13 @@ function botPlay(){
   const p = S.players[S.turn];
   if (!p || !p.bot) return;
   const id = p.id, Jk = S.jokers, h = S.hands[id];
+  if (S.choosing) { hostHandle(id, {a:"choose", c: RANKS[rnd(13)] + SUITS[rnd(4)]}); return; }
+  if (S.phase === "draw" && S.lockUntil && Date.now() < S.lockUntil) { botTimer = setTimeout(botPlay, S.lockUntil - Date.now() + 150); return; }
+  if (S.phase === "discard" && S.drawn && S.prizes) {
+    const ctx = {vira: S.vira, chosen: S.chosen};
+    const k = PRIZES.map(q => q.k).find(k => !S.prizes[k].winner && prizeCheck(k, h, S.drawn, ctx));
+    if (k) { hostHandle(id, {a:"claim", k}); return; }
+  }
   try {
     if (S.phase === "draw") {
       const top = S.discard[S.discard.length - 1];
@@ -834,7 +1020,21 @@ function botPlay(){
     try { hostHandle(id, S.phase === "draw" ? {a:"draw", from:"monte"} : {a:"discard", card:c}); } catch(_){}
   }
 }
-let botClaimTimer = null;
+let botClaimTimer = null, botPrizeTimer = null;
+function scheduleBotPrizes(){
+  if (botPrizeTimer || mode !== "host" || !S || S.status !== "playing" || !S.initialOpen) return;
+  const ctx = {vira: S.vira, chosen: S.chosen}, opts = [];
+  S.players.forEach(q => { if (!q.bot) return; PRIZES.forEach(({k}) => {
+    const pr = S.prizes[k];
+    if (pr.winner || (k === "maior" && pr.cands.some(x => x.p === q.id))) return;
+    if (prizeCheck(k, S.hands[q.id], null, ctx)) opts.push([q.id, k]);
+  }); });
+  if (!opts.length) return;
+  const [qid, k] = opts[rnd(opts.length)];
+  const restante = Math.max(300, S.openUntil - Date.now() - 400);
+  botPrizeTimer = setTimeout(() => { botPrizeTimer = null; if (S && S.initialOpen) hostHandle(qid, {a:"claim", k}); },
+    Math.min(restante, Math.round(BOT_DELAY * (1.2 + Math.random() * 2.5))));
+}
 function scheduleBot(){
   if (mode !== "host" || !S || S.status !== "playing") return;
   const jitter = () => rnd(Math.max(1, Math.round(BOT_DELAY * .5)));
@@ -874,7 +1074,7 @@ function scheduleBotPick(){
 function broadcast(){
   for (const [pid, c] of conns) if (c.open) { try { c.send({t:"view", v: viewFor(pid)}); } catch(e){} }
   V = viewFor(PID); render();
-  scheduleBot(); scheduleBotPick(); scheduleDraft();
+  scheduleBot(); scheduleBotPick(); scheduleDraft(); scheduleOpen(); scheduleBotPrizes();
 }
 function saveHost(){ lsSet("cacheta-host", JSON.stringify({code: CODE, pid: PID, s: S})); }
 function migrate(s){
@@ -886,6 +1086,9 @@ function migrate(s){
   if (!s.burned) s.burned = {};
   if (s.status === "playing" && !s.turnAt) s.turnAt = Date.now();
   if (!s.names) { s.names = {}; s.players.forEach(p => s.names[p.id] = p.nick); }
+  if (!s.chips) s.chips = {};
+  if (s.status === "playing" && !s.prizes) { s.prizes = {}; PRIZES.forEach(p => s.prizes[p.k] = {winner: null, cands: []}); }
+  if (s.status === "playing" && !s.pots) setupPots(s);
   return s;
 }
 
@@ -894,7 +1097,7 @@ let hostTries = 0;
 function startHost(code, state){
   mode = "host"; CODE = code; S = migrate(state); V = viewFor(PID);
   history.replaceState(null, "", location.pathname + "?mesa=" + CODE);
-  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock(); scheduleBot(); scheduleBotPick(); scheduleDraft();
+  saveHost(); net = "Abrindo a mesa…"; render(); wakeLock(); scheduleBot(); scheduleBotPick(); scheduleDraft(); scheduleOpen(); scheduleBotPrizes();
   if (typeof Peer === "undefined") { net = "Sem internet: não consegui carregar a conexão."; render(); return; }
   peer = new Peer(peerIdFor(CODE), PEER_OPTS);
   peer.on("open", () => { hostTries = 0; net = ""; render(); });
@@ -1078,6 +1281,64 @@ setInterval(() => {
   }
 }, 1000);
 
+/* =================== fichas na tela =================== */
+const reais = f => "R$ " + (Math.abs(f) * FICHA).toFixed(2).replace(".", ",");
+const money = f => `<span class="money ${f>0?"pos":f<0?"neg":""}">${f>0?"+":f<0?"−":""}${reais(f)}</span>`;
+let openEnd = 0, lockEnd = 0, timingV = null, pickR = null, pickS = null, cdWasActive = false;
+function syncTiming(){
+  if (!V || V === timingV) return;
+  timingV = V;
+  openEnd = V.initialOpen ? Date.now() + (V.openIn || 0) : 0;
+  lockEnd = V.lockIn ? Date.now() + V.lockIn : 0;
+  if (!V.choosing) { pickR = null; pickS = null; }
+}
+const locked = () => lockEnd && Date.now() < lockEnd;
+const secsLeft = t => Math.max(0, Math.ceil((t - Date.now()) / 1000));
+setInterval(() => {
+  if (!V || V.status !== "playing") return;
+  const active = (openEnd && Date.now() < openEnd) || locked();
+  const cd = $("#cd");
+  if (cd) cd.textContent = String(secsLeft(openEnd && Date.now() < openEnd ? openEnd : lockEnd));
+  if (cdWasActive && !active) render();     // libera os botões quando a contagem acaba
+  cdWasActive = active;
+}, 250);
+function saldoHTML(){
+  const ids = Object.keys((V && V.chips) || {});
+  if (!ids.length) return `<p class="muted" style="margin:0;font-size:.85rem">Ninguém apostou ainda.</p>`;
+  ids.sort((a,b) => (V.chips[b]||0) - (V.chips[a]||0));
+  return `<table class="score">${ids.map(id => `<tr><td>${esc(nk(id))}${id===V.me?' <span class="muted">(você)</span>':''}</td><td style="text-align:right;color:var(--muted)">${(V.chips[id]>0?"+":"")}${V.chips[id]||0} f</td><td>${money(V.chips[id]||0)}</td></tr>`).join("")}</table>`;
+}
+function prizesHTML(){
+  if (!V.pots || !V.prizes) return "";
+  const ctx = {vira: V.vira, chosen: V.chosen}, mine = V.hand;
+  const comCompra = myTurn() && V.phase === "discard" && V.drawn;
+  return `<div class="prizes">${POTS.map(k => {
+    const amt = V.pots[k] || 0;
+    if (k === "batida") return `<div class="pz bat"><span class="pn">Batida${V.stake && V.stake.cycles ? " ×" + Math.pow(2, V.stake.cycles) : ""}</span><span class="pv">${amt} fichas</span><span class="pw">${reais(amt)} para quem bater</span></div>`;
+    const pr = V.prizes[k], won = pr.winner, asked = pr.cands.includes(V.me);
+    const can = !won && mine && !V.choosing && (V.initialOpen ? (!asked && prizeCheck(k, mine, null, ctx)) : (comCompra && prizeCheck(k, mine, V.drawn, ctx)));
+    const nome = potName(k), extra = k === "escolhida" && V.chosen ? ` · <span style="color:${isRed(V.chosen)?"#f87171":"inherit"}">${cardName(V.chosen + "0")}</span>` : "";
+    const sub = won ? "✓ " + esc(nk(won)) : asked ? "você mostrou" : (k === "maior" && V.initialOpen && pr.cands.length ? pr.cands.length + " mostrou" : reais(amt));
+    return `<button class="pz ${won?"won":""} ${can?"can":""}" data-claim="${k}" ${can?"":"disabled"} aria-label="Prêmio ${nome}"><span class="pn">${nome}</span><span class="pv">${amt} f${extra}</span><span class="pw">${sub}</span></button>`;
+  }).join("")}</div>`;
+}
+function renderChoose(){
+  const ch = V.players[V.turn], eu = !!ch && ch.id === V.me;
+  return `
+  ${topHTML(true)}
+  ${netHTML()}
+  ${oppsHTML()}
+  <section class="panel">
+    <div class="eyebrow">Prêmio Escolhida</div>
+    <h2>${eu ? "Escolha a carta" : "Aguarde"}</h2>
+    <p class="muted" style="margin:0">${eu ? "Antes de ver sua mão, escolha uma carta. Quem mostrar primeiro essa carta ganha o prêmio Escolhida." : esc(ch ? ch.nick : "") + " está escolhendo a carta do prêmio Escolhida. As mãos aparecem logo depois."}</p>
+    ${eu ? `<div class="pick-r">${[...RANKS].map(r => `<button data-pr="${r}" class="${pickR===r?"on":""}">${rlabel(r)}</button>`).join("")}</div>
+    <div class="pick-s">${[...SUITS].map(su => `<button data-ps="${su}" class="${pickS===su?"on":""} ${su==="H"||su==="D"?"red":""}" aria-label="${su}">${SYM[su]}</button>`).join("")}</div>
+    <button class="primary" id="btnChoose" ${pickR && pickS ? "" : "disabled"}>${pickR && pickS ? "Escolher " + cardName(pickR + pickS + "0") : "Escolha o valor e o naipe"}</button>` : ""}
+  </section>
+  ${prizesHTML()}`;
+}
+
 /* =================== desenho =================== */
 const myTurn = () => V && V.status === "playing" && V.players[V.turn] && V.players[V.turn].id === V.me;
 const nk = id => { const p = V && V.players.find(p => p.id === id); return p ? p.nick : (V && V.names && V.names[id]) || "Alguém"; };
@@ -1133,6 +1394,10 @@ function rulesPanel(){
       <li>O botão Bater fica sempre liberado. <b>Bateu errado?</b> Até o fim da rodada você só pode bater com carta comprada do monte, nunca com carta do lixo.</li>
       <li>Se alguém demorar mais de 1 minuto na vez, um alarme aparece na tela.</li>
       <li>Cada batida vale <b>1 vitória</b> no placar.</li>
+      <li><b>Apostas</b>: 1 ficha = R$ 0,10. Por rodada, cada um põe 2 fichas na Batida e 1 em cada prêmio. Os valores dobram a cada alerta de tempo. Quem bate leva a Batida. Prêmio que ninguém ganhou volta para os jogadores.</li>
+      <li><b>Prêmios</b>: Maior (carta mais alta do naipe do coringa, de Ás a 10; 10 é a maior), Ás de Copas, 6 e 9 do mesmo naipe, Sequência de 4 do mesmo naipe (sem coringa), Duplicada (duas cartas iguais) e Escolhida (carta definida por quem começa, antes de ver a mão).</li>
+      <li>Depois de dar as cartas, há <b>10 s</b> para mostrar prêmios com a mão inicial (no Maior, leva quem mostrar a mais alta). Depois disso, prêmio só vale formado com a <b>carta que você acabou de comprar</b>.</li>
+      <li>Depois de cada descarte, o próximo jogador espera <b>3 s</b> para comprar.</li>
     </ul>
   </section>`;
 }
@@ -1193,6 +1458,11 @@ function renderLobby(){
     ${V.players.some(p=>p.wins>0) ? `<button id="btnZerar">Zerar placar</button>` : ""}
   </section>
   <section class="panel">
+    <h2>Apostas</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">1 ficha = R$ 0,10. Em cada rodada, cada jogador põe 2 fichas na <b style="color:var(--o)">Batida</b> e 1 ficha em cada um dos 6 prêmios (Maior, Ás de Copas, 6 e 9, Sequência, Duplicada, Escolhida): R$ 0,80 por rodada. ${V.clk && V.clk.lim ? `A cada alerta de tempo (${V.clk.lim} min) os valores dobram.` : "Os valores dobram a cada alerta de tempo, se a mesa tiver um."}</p>
+    ${saldoHTML()}
+  </section>
+  <section class="panel">
     <h2>Relógio da mesa</h2>
     <p class="muted" style="margin:0;font-size:.85rem">Começa a contar na primeira compra de carta. Toque no relógio no topo para pausar ou retomar. ${V.clk && V.clk.lim ? `A cada <b style="color:var(--o)">${V.clk.lim} min</b> aparece um alerta e o relógio recomeça.` : "Sem alerta de tempo."} Não muda nada no jogo.</p>
     ${mode==="host" ? `<div class="row"><input id="limEdit" class="grow" type="number" inputmode="numeric" min="0" max="600" placeholder="Minutos (vazio = sem alerta)" value="${V.clk && V.clk.lim ? V.clk.lim : ""}"><button id="btnLim">Salvar</button></div>` : ""}
@@ -1219,6 +1489,7 @@ function discardsWithPicks(){
   return ds;
 }
 function renderGame(){
+  if (V.choosing) return renderChoose();
   const meIn = !!V.hand, mine = myTurn(), Jk = J();
   let mark = {}, groups = null;
   if (meIn) {
@@ -1229,7 +1500,8 @@ function renderGame(){
       groups.forEach(g => g.cards.forEach((c,k) => mark[c] = {kind:g.kind, s:k===0, e:k===g.cards.length-1}));
     } else syncOrder(V.hand);
   }
-  const canDraw = mine && V.phase === "draw" && !V.claim;
+  const espera = V.initialOpen || locked();
+  const canDraw = mine && V.phase === "draw" && !V.claim && !espera;
   const bat = mine && V.phase === "discard" ? findBatida(V.hand, Jk) : null;
   const lastEv = V.hist && V.hist[V.hist.length-1];
   const freshTop = V.phase === "draw" && V.top && lastEv && lastEv.a === "d" && lastEv.c === V.top;
@@ -1245,6 +1517,8 @@ function renderGame(){
   else if (mine && V.phase === "draw") status = V.top ? "Sua vez: compre do monte ou pegue do lixo." : "Sua vez: compre do monte.";
   else if (mine) status = bat ? "Dá para bater! Toque em Bater." : V.canSwap ? "Não quer essa carta? Troque por outra." : "Escolha uma carta e descarte.";
   else status = `Vez de ${who}.`;
+  if (V.initialOpen) status = `Prêmios de mão: <b id="cd">${secsLeft(openEnd)}</b> s para mostrar. Depois, ${mine ? "você compra" : who + " compra"}.`;
+  else if (locked() && V.phase === "draw") status = mine ? `Sua vez em <b id="cd">${secsLeft(lockEnd)}</b> s…` : `${who} compra em <b id="cd">${secsLeft(lockEnd)}</b> s…`;
   if (canFora) status = `O ${cardName(V.top)} do lixo fecha a sua batida!`;
   if (V.claim) {
     const quem = claimIds.map(id => id === V.me ? "Você" : esc(nk(id))).join(" e ");
@@ -1274,8 +1548,9 @@ function renderGame(){
       <div class="trail" id="trail">${recent.length ? recent.map(({e,pk}) => `<div class="t ${pk?"pk":""}">${cardHTML(e.c,"xs")}<span class="w">${pk?"↑ "+esc(nk(pk)):esc(nk(e.p))}</span></div>`).join("") : '<span class="empty">Ninguém descartou ainda.</span>'}</div>
     </div>
   </section>
-  <div class="status ${mine||canFora?"mine":""}">${status}</div>
+  <div class="status ${mine||canFora||V.initialOpen?"mine":""}">${status}</div>
   <div class="log">${esc(V.log)}</div>
+  ${prizesHTML()}
   ${meIn ? `
   <div class="handwrap">
     ${canFora ? (iClaimed ? `<button class="fora" disabled>Pedido enviado…</button>` : `<button class="primary fora" id="btnFora">Bater com o ${cardName(V.top)} do lixo${iHavePref?" (você tem a preferência)":""}</button>`) : ""}
@@ -1316,9 +1591,18 @@ function renderEnd(){
     <div class="melds">${r.melds.map(m => `<div class="meld"><span class="t">${m.t}</span>${sortMeld(m.c, m.t, J()).map(c=>cardHTML(c,"md")).join("")}</div>`).join("")}</div>
     <div class="muted" style="font-size:.85rem">Vira ${V.vira?cardName(V.vira):"—"} · coringas ${J().map(j=>cardName(j+"0")).join(" e ")}</div>
   </section>
+  ${V.settle ? `<section class="panel">
+    <h2>Fichas da rodada</h2>
+    <ul class="plist">${V.settle.won.map(w => `<li><span class="n">${potName(w.k)}</span><span class="muted">${esc(nk(w.p))}</span><span class="w">+${w.amt} f</span></li>`).join("") || '<li><span class="n muted">Nenhum prêmio saiu.</span></li>'}</ul>
+    ${V.settle.back.length ? `<p class="muted" style="margin:0;font-size:.85rem">Sem ganhador, as fichas voltaram: ${V.settle.back.map(potName).join(", ")}.</p>` : ""}
+  </section>` : ""}
+  <section class="panel">
+    <h2>Saldo</h2>
+    ${saldoHTML()}
+  </section>
   <section class="panel">
     <h2>Placar</h2>
-    <table class="score">${rows.map(p=>`<tr><td>${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</td><td>${p.wins}</td></tr>`).join("")}</table>
+    <table class="score">${rows.map(p=>`<tr><td>${esc(p.nick)}${p.id===V.me?' <span class="muted">(você)</span>':''}</td><td>${p.wins} vit.</td></tr>`).join("")}</table>
     ${inTable || mode === "host" ? `<button class="primary" id="btnNext">Próxima rodada · ${esc(nk(r.winner))} dá as cartas</button>` : ""}
   </section>`;
 }
@@ -1349,7 +1633,7 @@ function renderWaiting(){
   return `${topHTML(false)}<section class="panel" style="text-align:center"><div class="codebig">${esc(CODE)}</div><p>${esc(net || "Conectando…")}</p><button id="btnLeave2">Voltar</button></section>`;
 }
 function render(){
-  syncClock(); syncTurn();
+  syncClock(); syncTurn(); syncTiming();
   let html;
   if (mode === "start") html = renderStart();
   else if (!V) html = renderWaiting();
@@ -1378,6 +1662,7 @@ function evText(e){
   if (e.a === "l") return `<span class="lx">${who} ${e.fora?"bateu com":"pegou"} ${cardName(e.c)} do lixo</span>`;
   if (e.a === "r") return `O lixo foi embaralhado e virou monte`;
   if (e.a === "x") return `${who} saiu do jogo`;
+  if (e.a === "p") return `<span class="lx">${who} ganhou o prêmio ${potName(e.k)} (+${e.amt} fichas)</span>`;
   if (e.a === "q") return `<span style="color:#fca5a5">${who} bateu errado</span>`;
   return "";
 }
@@ -1419,6 +1704,7 @@ function openMenu(){
     ${isHost && inTable && V.status!=="lobby" ? `<button id="mHostOut">Parar de jogar (continuar organizando)</button>` : ""}
     ${clockBase != null ? `<div class="muted" style="font-size:.88rem">Relógio da mesa: <b style="color:var(--text)">${fmtTime(clockEl())}</b>${clockPaused ? " (pausado)" : ""}${clockLim ? ` · alerta a cada ${clockLim} min` : ""}</div>
     <button id="mPause">${clockPaused ? "Retomar relógio" : "Pausar relógio"}</button>` : ""}
+    ${V && Object.keys(V.chips || {}).length ? `<h2>Saldo</h2>${saldoHTML()}` : ""}
     <button id="mCopy">Copiar convite</button>
     ${V && V.status !== "lobby" && inTable ? (confirmReset
       ? `<div class="row"><span class="grow">Encerrar a partida para todos? O placar fica.</span><button class="danger" id="mReset">Encerrar</button><button id="mCancel">Cancelar</button></div>`
@@ -1479,7 +1765,7 @@ function bind(){
   on("#btnLeave2", leave);
   on("#btnCopy", copyInvite);
   on("#btnShare", () => navigator.share({title:"PiFengy", text:"Entra na mesa " + CODE, url: inviteLink()}).catch(()=>{}));
-  document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { if (b.dataset.rm === V.me && mode === "client") { act("remove", {id:b.dataset.rm}); leave(); } else act("remove", {id:b.dataset.rm}); });
+  document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { if (b.dataset.rm === V.me && mode === "client") { confirmLeave = true; confirmReset = false; openMenu(); } else act("remove", {id:b.dataset.rm}); });
   on("#btnBot", () => act("addBot")); on("#btnBotFill", () => act("addBot", {fill:true}));
   on("#btnStart", () => act("start"));
   on("#clock", () => act("clockPause"));
@@ -1496,6 +1782,10 @@ function bind(){
   on("#btnSwap", () => { sel = null; act("swap"); });
   on("#btnDesc", () => { if (sel) { const c = sel; sel = null; act("discard", {card:c}); } });
   on("#btnBater", () => act("bater"));
+  document.querySelectorAll("[data-claim]").forEach(b => b.onclick = () => act("claim", {k: b.dataset.claim}));
+  document.querySelectorAll("[data-pr]").forEach(b => b.onclick = () => { pickR = b.dataset.pr; render(); });
+  document.querySelectorAll("[data-ps]").forEach(b => b.onclick = () => { pickS = b.dataset.ps; render(); });
+  on("#btnChoose", () => { if (pickR && pickS) act("choose", {c: pickR + pickS}); });
   on("#btnHostOut", () => act("hostOut")); on("#btnHostIn", () => act("hostIn"));
   document.querySelectorAll("[data-mv]").forEach(b => b.onclick = () => act("move", {id: b.dataset.mv, dir: Number(b.dataset.d)}));
   document.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => act("pick", {i: Number(b.dataset.pick)}));
