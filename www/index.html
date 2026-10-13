@@ -78,6 +78,9 @@ input.code{text-transform:uppercase;letter-spacing:.3em;font-weight:800;text-ali
 .game .pz.bat{grid-column:auto}
 .game .pz .pn{font-size:.52rem;letter-spacing:.04em}
 .game .pz .pv{font-size:.8rem}
+.pz .pv .rs{font-size:.62em;font-weight:700;opacity:.75;margin-right:1px}
+.game .pz{padding:4px 4px}
+@media (max-width:380px){.game .pz .pv{font-size:.72rem}}
 .game .pz.bat .pv{font-size:.9rem}
 .game .pz .pw{font-size:.55rem}
 .actions.three{grid-template-columns:1fr .9fr 1fr}
@@ -117,9 +120,9 @@ button.clock{min-height:32px;cursor:pointer;color:var(--text)}
 /* adversários */
 .opps{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .opps::-webkit-scrollbar{display:none}
-.opp{flex:1 1 0;min-width:76px;overflow:hidden;border:1px solid var(--line);border-radius:12px;padding:7px 9px;background:var(--s1);display:flex;flex-direction:column;gap:3px;position:relative}
+.opp{flex:1 1 0;min-width:84px;overflow:hidden;border:1px solid var(--line);border-radius:12px;padding:7px 9px;background:var(--s1);display:flex;flex-direction:column;gap:3px;position:relative}
 .opp .nm{font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px}
-.opp .meta{font-size:.7rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opp .meta{font-size:.74rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .opp .meta b{color:var(--o);font-weight:800}
 .opp.turn{border-color:var(--o);background:linear-gradient(180deg,rgba(255,122,26,.2),rgba(255,122,26,.04));box-shadow:0 0 0 1px var(--o) inset}
 .opp.off{opacity:.45}
@@ -244,11 +247,14 @@ button.card:active{background:var(--face)}
 .pz{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-height:0;padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:var(--s1);text-align:left;min-width:0;color:var(--text)}
 .pz.bat{grid-column:span 2;background:linear-gradient(135deg,rgba(255,122,26,.22),rgba(255,122,26,.06));border-color:rgba(255,122,26,.45)}
 .pz .pn{font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.pz .pv{font-weight:800;font-variant-numeric:tabular-nums;font-size:.95rem}
+.pz .pv{font-weight:800;font-variant-numeric:tabular-nums;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:clip;max-width:100%;letter-spacing:-.01em}
 .pz .pw{font-size:.66rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .pz.bat .pv{font-size:1.15rem;color:var(--o)}
 .pz:disabled{opacity:1;cursor:default}
 .pz.won{opacity:.45}
+.pz .pd{display:flex;flex-wrap:wrap;gap:1.5px;min-height:5px;margin-top:2px}
+.pz .pd i{width:5px;height:5px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.pz.can .pd i{box-shadow:0 0 0 1px var(--o-ink)}
 .pz.won .pw{color:var(--o);font-weight:700}
 .pz.can{border-color:var(--o);background:var(--o);color:var(--o-ink);animation:glow 1s ease-in-out infinite alternate;cursor:pointer}
 .pz.can .pn,.pz.can .pw{color:var(--o-ink)}
@@ -278,6 +284,14 @@ button.card:active{background:var(--face)}
 .big.time .bx{background:var(--o);color:var(--o-ink)}
 .big.time .ok{background:var(--o-ink);color:var(--o)}
 .big .w{font-size:.78rem;font-weight:600;opacity:.85;min-height:1em}
+.big .bx{max-height:86vh;overflow:auto}
+.big .br{display:flex;flex-direction:column;gap:8px;margin-top:6px;text-align:left}
+.big .brow{display:flex;align-items:center;gap:10px;justify-content:space-between;background:rgba(255,255,255,.28);border-radius:12px;padding:8px 10px}
+.big .bl{display:flex;flex-direction:column;gap:1px;min-width:0}
+.big .bl b{font-family:var(--display);font-weight:900;text-transform:uppercase;font-size:.95rem}
+.big .bl span{font-size:.82rem;font-weight:700}
+.big .bcs{display:flex;gap:4px;flex:0 0 auto}
+.big .bcs .card.joker{outline:2px solid #fff}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes zoom{from{transform:scale(.85)}to{transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.big,.big .bx{animation:none}}
@@ -390,7 +404,7 @@ const PRIZES = [
   {k:"sequencia", n:"Sequência"}, {k:"duplicada", n:"Duplicada"}, {k:"escolhida", n:"Escolhida"}];
 const POTS = ["batida", ...PRIZES.map(p => p.k)];
 const potName = k => k === "batida" ? "Batida" : PRIZES.find(p => p.k === k).n;
-const SHORT = {batida:"Batida", maior:"Maior", asCopas:"Ás ♥", seisNove:"6 e 9", sequencia:"Seq.", duplicada:"Dupl.", escolhida:"Escolh."};
+const SHORT = {batida:"Batida", maior:"Maior", asCopas:"Ás ♥", seisNove:"6 e 9", sequencia:"Seq.", duplicada:"Dupl.", escolhida:"Esc."};
 const FICHA = 0.10;
 // devolve um número > 0 quando a mão tem o prêmio; com "d", o prêmio precisa usar a carta comprada d
 function prizeCheck(k, hand, d, ctx){
@@ -428,6 +442,15 @@ function prizeCheck(k, hand, d, ctx){
   return 0;
 }
 
+// naipe do coringa primeiro
+const suitsFirst = ctx => { const js = ctx.vira && st(ctx.vira); return js ? [js, ...[...SUITS].filter(x => x !== js)] : [...SUITS]; };
+// Duplicada, 6 e 9 e Sequência no naipe do coringa valem mais que nos outros naipes
+const STRONG = ["duplicada", "seisNove", "sequencia"];
+function jokerSuitCombo(k, hand, ctx){
+  if (!STRONG.includes(k) || !hand || !ctx.vira) return false;
+  const js = st(ctx.vira), so = hand.filter(c => st(c) === js);
+  return !!prizeCheck(k, so, null, ctx);
+}
 // quais cartas formam o prêmio (para mostrar no alerta)
 function prizeCards(k, hand, d, ctx){
   const id2 = c => c.slice(0,2);
@@ -439,14 +462,14 @@ function prizeCards(k, hand, d, ctx){
     }
     case "asCopas": return d ? [d] : hand.filter(c => id2(c) === "AH").slice(0,1);
     case "seisNove":
-      for (const su of (d ? [st(d)] : [...SUITS])) {
+      for (const su of (d ? [st(d)] : suitsFirst(ctx))) {
         const six = d && id2(d) === "6" + su ? d : hand.find(c => id2(c) === "6" + su);
         const nine = d && id2(d) === "9" + su ? d : hand.find(c => id2(c) === "9" + su);
         if (six && nine) return [six, nine];
       }
       return [];
     case "sequencia":
-      for (const su of (d ? [st(d)] : [...SUITS])) {
+      for (const su of (d ? [st(d)] : suitsFirst(ctx))) {
         const cs = hand.filter(c => st(c) === su);
         for (let a = 1; a <= 11; a++) {
           const pick = []; let ok = true;
@@ -462,7 +485,8 @@ function prizeCards(k, hand, d, ctx){
       return [];
     case "duplicada": {
       if (d) { const tw = hand.find(c => c !== d && id2(c) === id2(d)); return tw ? [tw, d] : []; }
-      for (const c of hand) { const tw = hand.find(x => x !== c && id2(x) === id2(c)); if (tw) return [c, tw]; }
+      const js = ctx.vira && st(ctx.vira), ordem = hand.slice().sort((a,b) => (st(b) === js) - (st(a) === js));
+      for (const c of ordem) { const tw = hand.find(x => x !== c && id2(x) === id2(c)); if (tw) return [c, tw]; }
       return [];
     }
     case "escolhida": return d ? [d] : hand.filter(c => id2(c) === ctx.chosen).slice(0,1);
@@ -586,7 +610,14 @@ document.addEventListener("visibilitychange", () => {
 function emptyState(){ return {status:"lobby", players:[], wins:{}, round:0}; }
 const pIdx = (s, id) => s.players.findIndex(p => p.id === id);
 const nickOf = (s, id) => (s.players.find(p => p.id === id) || {}).nick || (s.names && s.names[id]) || "Alguém";
-const remember = (s, id, nick) => { s.names = s.names || {}; s.names[id] = nick; ensureChips(s, id); };
+const PCOLORS = ["#38bdf8","#a3e635","#f472b6","#a78bfa","#facc15","#2dd4bf","#fb7185","#e2e8f0"];
+function ensureColor(s, id){
+  s.colors = s.colors || {};
+  if (s.colors[id]) return;
+  const usados = new Set(s.players.filter(p => p.id !== id).map(p => s.colors[p.id]));
+  s.colors[id] = PCOLORS.find(c => !usados.has(c)) || PCOLORS[Object.keys(s.colors).length % PCOLORS.length];
+}
+const remember = (s, id, nick) => { s.names = s.names || {}; s.names[id] = nick; ensureChips(s, id); ensureColor(s, id); };
 function ensureChips(s, id){ s.chips = s.chips || {}; if (s.chips[id] == null) s.chips[id] = s.startChips || 0; }
 function fail(msg){ throw new Error(msg); }
 function deal(s){
@@ -618,7 +649,7 @@ function deal(s){
   s.log = (s.notice ? s.notice + " " : "") + "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas.";
 }
 /* ---------- fichas e montes ---------- */
-const OPEN_MS = window.__openMs || 10000;   // prêmios de mão antes da primeira compra
+const OPEN_MS = window.__openMs || 20000;   // prêmios de mão antes da primeira compra (20 s)
 const LOCK_MS = window.__lockMs || 3000;    // espera depois de cada descarte
 function clockCycles(s){
   if (!s.clockArmed || !s.limitMin) return 0;
@@ -722,7 +753,7 @@ function setupPots(s){
 }
 const preparing = s => s.status === "playing" && (s.choosing || Object.keys(s.payPick || {}).length > 0);
 const PAY_MS = window.__payMs || 30000;
-function maybeOpen(s){                      // abre os 10 s de prêmios quando a escolhida e os pagamentos estão definidos
+function maybeOpen(s){                      // abre os 20 s de prêmios quando a escolhida e os pagamentos estão definidos
   if (s.status !== "playing" || preparing(s) || s.initialOpen || s.openedOnce) return;
   s.openedOnce = true; s.initialOpen = true;
   s.openUntil = Date.now() + OPEN_MS; s.lockUntil = s.openUntil; s.turnAt = s.openUntil;
@@ -765,17 +796,35 @@ function settle(s, winner){                 // fecha a rodada: Batida para quem 
   }
   PRIZES.forEach(({k}) => {
     const pot = s.pots[k];
-    if (pot.paid) sum.won.push({k, p:pot.paid, amt:pot.amt});
+    if (pot.paid && pot.split) pot.split.forEach(x => sum.won.push({k, p:x.p, amt:x.amt}));
+    else if (pot.paid) sum.won.push({k, p:pot.paid, amt:pot.amt});
     else if (pot.amt > 0) sum.carry.push({k, amt:pot.amt});
   });
   s.settled = true; s.lastSettle = sum;
 }
-function awardPrize(s, k, pid, cards){
+function awardPrize(s, k, pid, cards, quiet){
   s.prizes[k].winner = pid;
   const amt = payPot(s, k, pid);
+  if (quiet) { s.hist.push({p:pid, a:"p", k, amt, cards: cards || [], batch: true}); return {k, p: pid, amt, cards: cards || []}; }
   const key = nextKey(s);
   s.hist.push({p:pid, a:"p", k, amt, cards: cards || [], key});
   s.log = nickOf(s, pid) + " ganhou o prêmio " + potName(k) + " (+" + amt + " fichas)!";
+  makeAcks(s, key);
+}
+function splitPrize(s, k, ids, ctx, quiet){  // empate: o monte é dividido; a sobra vai para quem mostrou primeiro
+  const pot = s.pots[k], total = pot.amt, n = ids.length;
+  const share = Math.floor(total / n), r = total % n;
+  const split = ids.map((id, i) => {
+    const amt = share + (i < r ? 1 : 0);
+    s.chips[id] = (s.chips[id] || 0) + amt;
+    return {p: id, amt, cards: prizeCards(k, s.hands[id], null, ctx)};
+  });
+  pot.paid = ids[0]; pot.split = split;
+  s.prizes[k].winner = ids[0]; s.prizes[k].winners = ids;
+  if (quiet) { s.hist.push({p: ids[0], a:"p", k, amt: total, split, cards: split.flatMap(x => x.cards), batch: true}); return {k, split, amt: total, cards: split.flatMap(x => x.cards)}; }
+  const key = nextKey(s);
+  s.hist.push({p: ids[0], a:"p", k, amt: total, split, cards: split.flatMap(x => x.cards), key});
+  s.log = ids.map(id => nickOf(s, id)).join(" e ") + " empataram no " + potName(k) + " e dividem " + total + " fichas!";
   makeAcks(s, key);
 }
 const pendingAcks = s => Object.keys(s.acks || {}).length > 0;
@@ -790,9 +839,29 @@ function ackCheck(s){
 function closeInitial(s){
   if (!s.initialOpen) return;
   s.initialOpen = false;
-  const pr = s.prizes.maior, c = pr.cands.filter(x => pIdx(s, x.p) >= 0);
-  if (!pr.winner && c.length) { const w = c.reduce((a, x) => x.v > a.v ? x : a).p; awardPrize(s, "maior", w, prizeCards("maior", s.hands[w], null, {vira: s.vira, chosen: s.chosen})); }
-  else s.log = "Compras liberadas!";
+  const ctx = {vira: s.vira, chosen: s.chosen}, items = [];
+  PRIZES.forEach(({k}) => {
+    const pr = s.prizes[k];
+    if (pr.winner) return;
+    const c = pr.cands.filter(x => pIdx(s, x.p) >= 0 && s.hands[x.p] && prizeCheck(k, s.hands[x.p], null, ctx));
+    if (!c.length) return;
+    if (k === "maior") {
+      const top = Math.max(...c.map(x => x.v)), ws = c.filter(x => x.v === top).map(x => x.p);   // em ordem de quem mostrou
+      items.push(ws.length === 1 ? awardPrize(s, k, ws[0], prizeCards(k, s.hands[ws[0]], null, ctx), true) : splitPrize(s, k, ws, ctx, true));
+    } else {
+      // desempate: naipe do coringa (Duplicada, 6 e 9, Sequência) e depois quem está mais perto da vez
+      const n = s.players.length, dist = id => (pIdx(s, id) - s.turn + n) % n;
+      const score = x => (jokerSuitCombo(k, s.hands[x.p], ctx) ? 0 : 100) + dist(x.p);
+      const w = c.slice().sort((a, b) => score(a) - score(b))[0].p;
+      items.push(awardPrize(s, k, w, prizeCards(k, s.hands[w], null, ctx), true));
+    }
+  });
+  if (items.length) {
+    const key = nextKey(s);
+    s.hist.push({a:"pg", items, key});
+    s.log = "Prêmios de mão: " + items.map(it => potName(it.k) + " para " + (it.split ? it.split.map(x => nickOf(s, x.p)).join(" e ") : nickOf(s, it.p))).join("; ") + ".";
+    makeAcks(s, key);
+  } else s.log = "Nenhum prêmio de mão. Compras liberadas!";
   s.turnAt = Date.now();
 }
 let openTimer = null;
@@ -1042,16 +1111,15 @@ function apply(pid, m){
       if (!H) fail("Você não está jogando esta rodada.");
       if (!(s.pots && s.pots[k] && s.pots[k].payers[pid])) fail("Você não pagou o prêmio " + potName(k) + " nesta rodada (fichas insuficientes).");
       const ctx = {vira: s.vira, chosen: s.chosen};
-      if (s.initialOpen) {
+      if (s.initialOpen) {                       // guardado em segredo até o fim dos 20 s
         const v = prizeCheck(k, H, null, ctx);
         if (!v) fail("Sua mão não tem o prêmio " + potName(k) + ".");
-        if (k === "maior") {
-          if (!pr.cands.some(x => x.p === pid)) pr.cands.push({p:pid, v});
-          s.log = nickOf(s, pid) + " mostrou carta para o Maior.";
-          break;
-        }
-        awardPrize(s, k, pid, prizeCards(k, H, null, ctx)); break;
+        if (!pr.cands.some(x => x.p === pid)) pr.cands.push({p:pid, v, t: Date.now()});
+        sendErr(pid, "Pedido de " + potName(k) + " registrado. O resultado sai no fim da contagem.");
+        saveHost(); broadcast();
+        return;
       }
+      if (k === "maior") fail("O prêmio Maior só vale com a mão inicial, antes de liberar as compras.");
       if (!(isTurn(s, pid) && s.phase === "discard" && s.drawn)) fail("Agora só vale prêmio com a carta que você acabou de comprar.");
       if (s.drawnFrom === "lixo") fail("Carta pega do lixo não vale para prêmio.");
       if (!prizeCheck(k, H, s.drawn, ctx)) fail("A carta comprada não forma o prêmio " + potName(k) + ".");
@@ -1221,11 +1289,13 @@ function viewFor(pid){
     openIn: s.initialOpen ? Math.max(0, s.openUntil - (s.haltAt || Date.now())) : 0,
     lockIn: s.status === "playing" && s.lockUntil ? Math.max(0, s.lockUntil - (s.haltAt || Date.now())) : 0,
     drawnFrom: isTurn(s, pid) ? s.drawnFrom || null : null,
-    prizes: s.prizes ? Object.fromEntries(PRIZES.map(p => [p.k, {winner: s.prizes[p.k].winner, cands: s.prizes[p.k].cands.map(x => x.p)}])) : null,
+    prizes: s.prizes ? Object.fromEntries(PRIZES.map(p => [p.k, {winner: s.prizes[p.k].winner, winners: s.prizes[p.k].winners || null, cands: s.prizes[p.k].cands.filter(x => x.p === pid).map(x => x.p)}])) : null,
     pots: s.pots ? Object.fromEntries(POTS.map(k => [k, s.pots[k].amt])) : null,
     paid: s.pots ? POTS.filter(k => s.pots[k].payers[pid]) : [],
     payPick: s.status === "playing" ? Object.fromEntries(Object.entries(s.payPick || {}).map(([id, v]) => [id, {max: v.max, opts: v.opts || [], pend: !!v.pend}])) : {},
     carried: s.pots ? PRIZES.map(q => q.k).filter(k => s.pots[k].carried) : [],
+    potPayers: s.pots ? Object.fromEntries(PRIZES.map(q => [q.k, Object.keys(s.pots[q.k].payers)])) : {},
+    colors: s.colors || {},
     notice: s.notice || null,
     stake: s.stake || null,
     startChips: s.startChips || 0,
@@ -1272,7 +1342,7 @@ function botPlay(){
   if (S.phase === "draw" && S.lockUntil && Date.now() < S.lockUntil) { botTimer = setTimeout(botPlay, S.lockUntil - Date.now() + 150); return; }
   if (S.phase === "discard" && S.drawn && S.prizes) {
     const ctx = {vira: S.vira, chosen: S.chosen};
-    const k = S.drawnFrom === "lixo" ? null : PRIZES.map(q => q.k).find(k => !S.prizes[k].winner && S.pots[k].payers[id] && prizeCheck(k, h, S.drawn, ctx));
+    const k = S.drawnFrom === "lixo" ? null : PRIZES.map(q => q.k).find(k => k !== "maior" && !S.prizes[k].winner && S.pots[k].payers[id] && prizeCheck(k, h, S.drawn, ctx));
     if (k) { hostHandle(id, {a:"claim", k}); return; }
   }
   try {
@@ -1317,7 +1387,7 @@ function scheduleBotPrizes(){
   const ctx = {vira: S.vira, chosen: S.chosen}, opts = [];
   S.players.forEach(q => { if (!q.bot) return; PRIZES.forEach(({k}) => {
     const pr = S.prizes[k];
-    if (pr.winner || !S.pots[k].payers[q.id] || (k === "maior" && pr.cands.some(x => x.p === q.id))) return;
+    if (pr.winner || !S.pots[k].payers[q.id] || pr.cands.some(x => x.p === q.id)) return;
     if (prizeCheck(k, S.hands[q.id], null, ctx)) opts.push([q.id, k]);
   }); });
   if (!opts.length) return;
@@ -1398,6 +1468,7 @@ function migrate(s){
   if (!s.names) { s.names = {}; s.players.forEach(p => s.names[p.id] = p.nick); }
   if (!s.chips) s.chips = {};
   if (!s.payPick) s.payPick = {};
+  s.players.forEach(p => ensureColor(s, p.id));
   if (s.clockStart && s.clockAcc == null) {           // versão anterior do relógio
     s.clockAcc = Math.max(0, (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0));
     s.clockArmed = true; s.clockRun = null;
@@ -1602,16 +1673,19 @@ function syncBig(){
   if (V.status === "lobby" || V.status === "draft") { seenRound = null; seenLen = 0; return; }
   if (seenRound !== V.round) { seenRound = V.round; seenLen = V.hist.length; return; }   // ao entrar, não repete o passado
   const novos = V.hist.slice(seenLen); seenLen = V.hist.length;
-  novos.forEach(e => { if (e.a === "q" || e.a === "p" || e.a === "tempo") queuePrize(e); });
+  const alerta = e => e.a === "q" || e.a === "tempo" || e.a === "pg" || (e.a === "p" && !e.batch);
+  novos.forEach(e => { if (alerta(e)) queuePrize(e); });
   // quem entrou ou voltou no meio também confirma os alertas pendentes
-  (V.hist || []).forEach(e => { if ((e.a === "p" || e.a === "q" || e.a === "tempo") && e.key && needsMyAck(e.key)) queuePrize(e); });
+  (V.hist || []).forEach(e => { if (alerta(e) && e.key && needsMyAck(e.key)) queuePrize(e); });
   if (!bigT && !bigCur) nextBig();
 }
 function queuePrize(e){
   if (e.key && bigShown.has(e.key)) return;
   if (e.key) bigShown.add(e.key);
-  if (e.a === "q") bigQ.push({cls:"bad", k:"Batida errada", t:(e.p === V.me ? "Você" : nk(e.p)) + " bateu errado!", d:"Agora só pode bater com carta comprada do monte.", key: e.key});
+  if (e.a === "pg") bigQ.push({cls:"win", k:"Prêmios de mão", t: e.items.length === 1 ? potName(e.items[0].k) : e.items.length + " prêmios", d:"", rows: e.items, key: e.key});
+  else if (e.a === "q") bigQ.push({cls:"bad", k:"Batida errada", t:(e.p === V.me ? "Você" : nk(e.p)) + " bateu errado!", d:"Agora só pode bater com carta comprada do monte.", key: e.key});
   else if (e.a === "tempo") bigQ.push({cls:"time", k:"Tempo", t:(e.n * e.min) + " min de jogo", d:"O relógio recomeçou. As apostas dobram na próxima rodada.", key: e.key});
+  else if (e.split) bigQ.push({cls:"win", k:"Prêmio dividido", t:potName(e.k), d: e.split.map(x => (x.p === V.me ? "Você" : nk(x.p)) + " +" + x.amt).join(" · ") + " fichas (empate)", cards: e.cards || [], key: e.key});
   else bigQ.push({cls:"win", k:"Prêmio", t:potName(e.k), d:(e.p === V.me ? "Você ganhou" : nk(e.p) + " ganhou") + " +" + e.amt + " fichas (" + reais(e.amt) + ")", cards: e.cards || [], key: e.key});
 }
 function nextBig(){
@@ -1622,6 +1696,7 @@ function nextBig(){
   el.className = "big " + it.cls;
   el.innerHTML = `<div class="bx"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.t)}</span><span class="d">${esc(it.d)}</span>
     ${it.cards && it.cards.length ? `<div class="bc">${it.cards.map(c => cardHTML(c, "md")).join("")}</div>` : ""}
+    ${it.rows ? `<div class="br">${it.rows.map(r => `<div class="brow"><div class="bl"><b>${esc(potName(r.k))}</b><span>${r.split ? r.split.map(x => esc(x.p === V.me ? "Você" : nk(x.p)) + " +" + x.amt).join(" · ") + " (empate)" : esc(r.p === V.me ? "Você" : nk(r.p)) + " +" + r.amt + " fichas"}</span></div><div class="bcs">${(r.cards || []).map(c => cardHTML(c, "sm")).join("")}</div></div>`).join("")}</div>` : ""}
     ${it.key ? `<button class="ok" id="bigOk">${pede ? "Ok, vi" : "Fechar"}</button><span class="w">${pede ? "O jogo continua quando todos confirmarem." : ""}</span>` : ""}</div>`;
   el.hidden = false;
   const fechar = () => { if (it.key && needsMyAck(it.key)) act("ack", {key: it.key}); nextBig(); };
@@ -1631,6 +1706,7 @@ function nextBig(){
 }
 
 /* =================== fichas na tela =================== */
+const reaisC = f => '<small class="rs">R$</small>' + (Math.abs(f) * FICHA).toFixed(2).replace(".", ",");   // compacto, para os prêmios
 const reais = f => "R$ " + (Math.abs(f) * FICHA).toFixed(2).replace(".", ",");
 const money = f => `<span class="money ${f>0?"pos":f<0?"neg":""}">${f>0?"+":f<0?"−":""}${reais(f)}</span>`;
 let openEnd = 0, lockEnd = 0, timingV = null, pickR = null, pickS = null, cdWasActive = false, paySel = new Set();
@@ -1668,14 +1744,15 @@ function prizesHTML(){
   const comCompra = myTurn() && V.phase === "discard" && V.drawn && V.drawnFrom !== "lixo" && !V.halt;
   return `<div class="prizes">${POTS.map(k => {
     const amt = V.pots[k] || 0;
-    if (k === "batida") return `<div class="pz bat"><span class="pn">Batida${V.stake && V.stake.cycles ? " ×" + Math.pow(2, V.stake.cycles) : ""}</span><span class="pv">${amt} f</span><span class="pw">${reais(amt)}</span></div>`;
+    if (k === "batida") return `<div class="pz bat"><span class="pn">Batida${V.stake && V.stake.cycles ? " ×" + Math.pow(2, V.stake.cycles) : ""}</span><span class="pv">${reaisC(amt)}</span><span class="pw">para quem bater</span></div>`;
     const pr = V.prizes[k], won = pr.winner, asked = pr.cands.includes(V.me);
     const pago = (V.paid || []).includes(k);
-    const can = pago && !won && mine && !V.choosing && !V.halt && (V.initialOpen ? (!asked && prizeCheck(k, mine, null, ctx)) : (comCompra && prizeCheck(k, mine, V.drawn, ctx)));
-    const nome = SHORT[k], extra = k === "escolhida" && V.chosen ? ` <span style="color:${isRed(V.chosen)&&!0?"#f87171":"inherit"}">${cardName(V.chosen + "0")}</span>` : "";
+    const can = pago && !won && mine && !V.choosing && !V.halt && (V.initialOpen ? (!asked && prizeCheck(k, mine, null, ctx)) : (k !== "maior" && comCompra && prizeCheck(k, mine, V.drawn, ctx)));
+    const nome = SHORT[k] + (k === "escolhida" && V.chosen ? ` <span style="color:${isRed(V.chosen)?"#f87171":"inherit"}">${cardName(V.chosen + "0")}</span>` : "");
     const acum = (V.carried || []).includes(k);
-    const sub = won ? "✓ " + esc(nk(won)) : (V.seated && !pago) ? "não pagou" : acum && !asked ? "acumulado" : asked ? "mostrado" : (k === "maior" && V.initialOpen && pr.cands.length ? pr.cands.length + " mostrou" : reais(amt));
-    return `<button class="pz ${won?"won":""} ${can?"can":""}" data-claim="${k}" ${can?"":"disabled"} aria-label="Prêmio ${potName(k)}"><span class="pn">${nome}</span><span class="pv">${amt} f${extra}</span><span class="pw">${sub}</span></button>`;
+    const sub = won ? "✓ " + (pr.winners ? pr.winners.map(id => esc(nk(id))).join(" + ") : esc(nk(won))) : (V.seated && !pago) ? "não pagou" : acum && !asked ? "acumulado" : asked ? "pedido ✓" : "&nbsp;";
+    const quem = ((V.potPayers || {})[k] || []).map(id => `<i style="background:${colorOf(id)}" title="${esc(nk(id))}"></i>`).join("");
+    return `<button class="pz ${won?"won":""} ${can?"can":""}" data-claim="${k}" ${can?"":"disabled"} aria-label="Prêmio ${potName(k)}"><span class="pn">${nome}</span><span class="pv">${reaisC(amt)}</span><span class="pw">${sub}</span><span class="pd">${quem}</span></button>`;
   }).join("")}</div>`;
 }
 function payPanelHTML(){
@@ -1715,6 +1792,7 @@ function renderChoose(){
 
 /* =================== desenho =================== */
 const myTurn = () => V && V.status === "playing" && V.players[V.turn] && V.players[V.turn].id === V.me;
+const colorOf = id => (V && V.colors && V.colors[id]) || "#a3a3ad";
 const nk = id => { const p = V && V.players.find(p => p.id === id); return p ? p.nick : (V && V.names && V.names[id]) || "Alguém"; };
 const J = () => (V && V.jokers) || [];
 const isJk = c => isJ(c, J());
@@ -1771,8 +1849,8 @@ function rulesPanel(){
       <li>Cada batida vale <b>1 vitória</b> no placar.</li>
       <li><b>Sem fichas para a Batida?</b> No começo da rodada, quem não consegue pagar a Batida sai do jogo e as fichas que sobraram com ele são divididas entre os que continuam. Quem paga a Batida mas não tem fichas para todos os prêmios <b>escolhe</b> quais vai pagar (antes de ver a mão) e só pode ganhar esses.</li>
       <li><b>Apostas</b>: cada jogador começa com as fichas definidas na criação da mesa. 1 ficha = R$ 0,10. Por rodada, cada um põe 2 fichas na Batida e 1 em cada prêmio. Os valores dobram a cada alerta de tempo. Quem bate leva a Batida. Prêmio que ninguém ganhou <b>acumula</b> para a rodada seguinte: só paga de novo quem ainda não pagou, e esses prêmios pendentes são pagos antes dos outros. Quando alguém sai por falta de fichas, o relógio zera.</li>
-      <li><b>Prêmios</b>: Maior (carta mais alta do naipe do coringa, de Ás a 10; 10 é a maior), Ás de Copas, 6 e 9 do mesmo naipe, Sequência de 4 do mesmo naipe (sem coringa), Duplicada (duas cartas iguais) e Escolhida (carta definida por quem começa, antes de ver a mão).</li>
-      <li>Depois de dar as cartas, há <b>10 s</b> para mostrar prêmios com a mão inicial (no Maior, leva quem mostrar a mais alta). Depois disso, prêmio só vale formado com a <b>carta que você acabou de comprar</b>.</li>
+      <li><b>Prêmios</b>: Maior (carta mais alta do naipe do coringa, de Ás a 10; 10 é a maior; <b>só com a mão inicial</b>; empate divide o prêmio), Ás de Copas, 6 e 9 do mesmo naipe, Sequência de 4 do mesmo naipe (sem coringa), Duplicada (duas cartas iguais) e Escolhida (carta definida por quem começa, antes de ver a mão).</li>
+      <li>Depois de dar as cartas, há <b>20 s</b> para pedir prêmios com a mão inicial. Os pedidos ficam em segredo e o resultado de todos sai junto no fim da contagem. Se dois pedirem o mesmo prêmio, leva quem está mais perto da vez; em Duplicada, 6 e 9 e Sequência, o jogo no <b>naipe do coringa</b> vence os outros naipes. No Maior, leva a carta mais alta. Depois disso, prêmio só vale formado com a <b>carta que você acabou de comprar</b>.</li>
       <li>Depois de cada descarte, o próximo jogador espera <b>3 s</b> para comprar.</li>
       <li>Prêmio, batida errada e alerta de tempo <b>param o jogo e o relógio</b> até todos tocarem em "Ok, vi". Se alguém sumir, toque no relógio para liberar.</li>
       <li>Carta pega do lixo <b>não vale</b> para prêmio.</li>
@@ -1831,7 +1909,7 @@ function renderLobby(){
   <section class="panel">
     <div class="row" style="justify-content:space-between"><h2>Na mesa</h2><span class="muted">${V.players.length}/6</span></div>
     <p class="muted" style="margin:0;font-size:.8rem">A ordem da lista é a ordem de jogo.${canOrder ? " Use ▲ ▼ para mudar antes da primeira rodada." : ""}</p>
-    <ul class="plist">${V.players.map((p,i) => `<li><span class="dot ${p.online?"":"off"}"></span><span class="muted" style="font-variant-numeric:tabular-nums;font-size:.8rem">${i+1}.</span><span class="n">${esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${canOrder?`<span class="ord"><button data-mv="${esc(p.id)}" data-d="-1" ${i===0?"disabled":""} aria-label="Subir">▲</button><button data-mv="${esc(p.id)}" data-d="1" ${i===V.players.length-1?"disabled":""} aria-label="Descer">▼</button></span>`:""}${p.id===V.host&&mode==="host"?`<button id="btnHostOut">Não jogar</button>`:p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
+    <ul class="plist">${V.players.map((p,i) => `<li><span class="dot ${p.online?"":"off"}"></span><span class="muted" style="font-variant-numeric:tabular-nums;font-size:.8rem">${i+1}.</span><span class="n" style="color:${colorOf(p.id)}">${esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${p.id===V.me?' <span class="muted">(você)</span>':''}${p.id===V.host?' <span class="muted">· anfitrião</span>':''}</span><span class="w">${p.wins} vit.</span>${canOrder?`<span class="ord"><button data-mv="${esc(p.id)}" data-d="-1" ${i===0?"disabled":""} aria-label="Subir">▲</button><button data-mv="${esc(p.id)}" data-d="1" ${i===V.players.length-1?"disabled":""} aria-label="Descer">▼</button></span>`:""}${p.id===V.host&&mode==="host"?`<button id="btnHostOut">Não jogar</button>`:p.id!==V.host?`<button data-rm="${esc(p.id)}">${p.id===V.me?"Sair":"Tirar"}</button>`:""}</li>`).join("")}</ul>
     ${mode==="host" && !inTable ? `<div class="row"><span class="muted grow" style="font-size:.85rem">Você está só organizando a mesa.</span><button id="btnHostIn">Entrar no jogo</button></div>` : ""}
     ${mode!=="host" && !inTable ? `<p class="muted" style="margin:0">A mesa está cheia ou a partida já começou. Você está assistindo.</p>` : ""}
     ${mode==="host" && V.players.length<6 ? `<div class="row"><button class="grow" id="btnBot">+ Adicionar bot</button><button class="grow" id="btnBotFill">Completar com bots</button></div>
@@ -1848,7 +1926,7 @@ function renderLobby(){
   </section>
   <section class="panel">
     <h2>Relógio da mesa</h2>
-    <p class="muted" style="margin:0;font-size:.85rem">Corre só durante as compras e os descartes (para nos alertas, nos 10 s de prêmios e entre rodadas). Toque no relógio no topo para pausar ou retomar. ${V.clk && V.clk.lim ? `A cada <b style="color:var(--o)">${V.clk.lim} min</b> aparece um alerta e o relógio recomeça.` : "Sem alerta de tempo."} Não muda nada no jogo.</p>
+    <p class="muted" style="margin:0;font-size:.85rem">Corre só durante as compras e os descartes (para nos alertas, nos 20 s de prêmios e entre rodadas). Toque no relógio no topo para pausar ou retomar. ${V.clk && V.clk.lim ? `A cada <b style="color:var(--o)">${V.clk.lim} min</b> aparece um alerta e o relógio recomeça.` : "Sem alerta de tempo."} Não muda nada no jogo.</p>
     ${mode==="host" ? `<div class="row"><input id="limEdit" class="grow" type="number" inputmode="numeric" min="0" max="600" placeholder="Minutos (vazio = sem alerta)" value="${V.clk && V.clk.lim ? V.clk.lim : ""}"><button id="btnLim">Salvar</button></div>` : ""}
   </section>
   ${rulesPanel()}`;
@@ -1861,8 +1939,7 @@ function oppsHTML(){
     const i = (start + k) % n, p = V.players[i];
     out += `<div class="opp ${V.status==="playing"&&V.turn===i?"turn":""} ${p.online?"":"off"}">
       ${i===V.dealer?'<span class="dl" title="Deu as cartas">D</span>':""}
-      <span class="nm">${p.id===V.me?"Você":esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${(V.burned||[]).includes(p.id)?'<span class="qm" title="Bateu errado">✕</span>':''}</span>
-      <span class="backs">${'<i></i>'.repeat(Math.min(p.count,10))}</span>
+      <span class="nm" style="color:${colorOf(p.id)}">${p.id===V.me?"Você":esc(p.nick)}${p.bot?'<span class="bt">BOT</span>':''}${(V.burned||[]).includes(p.id)?'<span class="qm" title="Bateu errado">✕</span>':''}</span>
       <span class="meta" title="${p.count} cartas · ${p.wins} vitórias"><b>${(V.chips && V.chips[p.id]) || 0}</b> fichas</span></div>`;
   }
   return `<div class="opps">${out}</div>`;
@@ -2055,9 +2132,11 @@ function evText(e){
   if (e.a === "r") return `O lixo foi embaralhado e virou monte`;
   if (e.a === "x") return `${who} saiu do jogo`;
   if (e.a === "e") return `<span style="color:#fca5a5">${who} ficou sem fichas para a Batida e saiu${e.amt ? ` (${e.amt} fichas divididas, ${e.share} para cada)` : ""}</span>`;
+  if (e.a === "p" && e.split) return `<span class="lx">${e.split.map(x => "<b>" + esc(nk(x.p)) + "</b> +" + x.amt).join(", ")} dividiram o prêmio ${potName(e.k)} (empate${e.cards && e.cards.length ? ": " + e.cards.map(cardName).join(" ") : ""})</span>`;
   if (e.a === "p") return `<span class="lx">${who} ganhou o prêmio ${potName(e.k)} (+${e.amt} fichas)${e.cards && e.cards.length ? " com " + e.cards.map(cardName).join(" ") : ""}</span>`;
   if (e.a === "q") return `<span style="color:#fca5a5">${who} bateu errado</span>`;
   if (e.a === "tempo") return `Tempo: ${e.n * e.min} min de jogo`;
+  if (e.a === "pg") return `<span class="lx">Fim dos prêmios de mão: ${e.items.length} ${e.items.length === 1 ? "prêmio" : "prêmios"}</span>`;
   return "";
 }
 function openHist(){
