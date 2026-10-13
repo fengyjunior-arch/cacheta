@@ -275,6 +275,8 @@ button.card:active{background:var(--face)}
 .big .bc .card.joker{outline:3px solid #fff;outline-offset:1px}
 .big .ok{margin-top:8px;background:var(--gold-ink);color:var(--gold-a);border:0;min-height:48px;font-size:1.05rem;font-weight:800}
 .big.bad .ok{background:#fff;color:#b91c1c}
+.big.time .bx{background:var(--o);color:var(--o-ink)}
+.big.time .ok{background:var(--o-ink);color:var(--o)}
 .big .w{font-size:.78rem;font-weight:600;opacity:.85;min-height:1em}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes zoom{from{transform:scale(.85)}to{transform:scale(1)}}
@@ -590,6 +592,7 @@ function fail(msg){ throw new Error(msg); }
 function deal(s){
   if (s.pots && !s.settled) settle(s, null);
   const out = eliminateBroke(s, 2 * Math.pow(2, clockCycles(s)));
+  if (out.length) { s.clockAcc = 0; s.clockRun = null; s.lastCycle = 0; }   // alguém saiu sem fichas: o relógio recomeça
   if (s.players.length < 2) { gameOver(s, out); return; }
   const deck = newDeck();
   s.hands = {};
@@ -604,6 +607,7 @@ function deal(s){
   s.turnAt = Date.now(); s.draft = null;
   s.hist = [];
   s.choosing = true; s.chosen = null; s.initialOpen = false; s.openUntil = 0; s.lockUntil = 0; s.openedOnce = false;
+  s.acks = {}; s.haltAt = null;
   // 1ª rodada: quem começa escolhe a carta; depois, quem bateu a rodada anterior
   s.chooser = s.lastWinner && pIdx(s, s.lastWinner) >= 0 ? s.lastWinner : s.players[s.turn].id;
   s.prizes = {}; PRIZES.forEach(p => s.prizes[p.k] = {winner: null, cands: []});
@@ -617,8 +621,8 @@ function deal(s){
 const OPEN_MS = window.__openMs || 10000;   // prêmios de mão antes da primeira compra
 const LOCK_MS = window.__lockMs || 3000;    // espera depois de cada descarte
 function clockCycles(s){
-  if (!s.clockStart || !s.limitMin) return 0;
-  const el = (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0);
+  if (!s.clockArmed || !s.limitMin) return 0;
+  const el = clockElapsed(s);
   return Math.min(10, Math.max(0, Math.floor(el / (s.limitMin * 60000))));
 }
 function eliminateBroke(s, b){
@@ -649,23 +653,71 @@ function elimText(s, out){
 function gameOver(s, out){
   Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, drawn:null, hist:[], claim:null, draft:null});
   const champ = s.players[0];
+  if (champ && s.pots) POTS.forEach(k => { const pot = s.pots[k]; if (pot && !pot.paid && pot.amt > 0) { s.chips[champ.id] = (s.chips[champ.id] || 0) + pot.amt; pot.paid = champ.id; } });
   s.notice = (out.length ? elimText(s, out) + " " : "") + (champ ? "Fim de jogo! " + champ.nick + " ficou com todas as fichas." : "Fim de jogo.");
   s.log = s.notice;
 }
+/* ---------- relógio da mesa: corre só durante compras e descartes ---------- */
+const clockElapsed = s => (s.clockAcc || 0) + (s.clockRun ? Date.now() - s.clockRun : 0);
+function clockShould(s){
+  return !!s.clockArmed && s.status === "playing" && !preparing(s) && !s.initialOpen && !pendingAcks(s) && !s.manualPause && !s.haltAt;
+}
+function clockSync(s){
+  if (!s) return;
+  const now = Date.now(), run = clockShould(s);
+  if (run && !s.clockRun) s.clockRun = now;
+  else if (!run && s.clockRun) { s.clockAcc = (s.clockAcc || 0) + (now - s.clockRun); s.clockRun = null; }
+}
+/* ---------- alertas: o jogo e o relógio param até todos confirmarem ---------- */
+function makeAcks(s, key){
+  const need = s.players.filter(p => !p.bot && (p.id === PID || (conns.get(p.id) && conns.get(p.id).open))).map(p => p.id);
+  if (!need.length) return;
+  s.acks = s.acks || {};
+  s.acks[key] = {need, got: []};
+  haltStart(s);
+}
+function haltStart(s){
+  if (s.haltAt) return;
+  s.haltAt = Date.now();
+  if (claimTimer) { clearTimeout(claimTimer); claimTimer = null; }
+  if (openTimer) { clearTimeout(openTimer); openTimer = null; }
+}
+function haltEnd(s){
+  if (!s.haltAt) return;
+  const d = Date.now() - s.haltAt;
+  ["openUntil", "lockUntil", "turnAt"].forEach(k => { if (s[k]) s[k] += d; });   // contagens retomam de onde pararam
+  s.haltAt = null;
+  if (s.claim && s.status === "playing") armClaim();
+}
+const nextKey = s => (s.round || 0) + "-" + s.hist.length;
 function setupPots(s){
   if (s.pots && !s.settled) settle(s, null);
   const cycles = clockCycles(s), b = 2 * Math.pow(2, cycles), h = b / 2;
   s.stake = {b, h, cycles};
   s.chips = s.chips || {};
+  const old = s.pots || {};
   s.pots = {}; s.settled = false; s.lastSettle = null;
-  POTS.forEach(k => s.pots[k] = {amt: 0, payers: {}, paid: null});
+  s.pots.batida = {amt: 0, payers: {}, paid: null};
+  PRIZES.forEach(({k}) => {                                         // prêmio sem ganhador continua acumulado
+    const o = old[k];
+    s.pots[k] = o && !o.paid && o.amt > 0 ? {amt: o.amt, payers: Object.assign({}, o.payers), paid: null, carried: true} : {amt: 0, payers: {}, paid: null};
+  });
   s.payPick = {};
-  const pay = (id, k, v) => { s.pots[k].amt += v; s.pots[k].payers[id] = v; s.chips[id] = (s.chips[id] || 0) - v; };
+  const pay = (id, k, v) => { s.pots[k].amt += v; s.pots[k].payers[id] = (s.pots[k].payers[id] || 0) + v; s.chips[id] = (s.chips[id] || 0) - v; };
   s.players.forEach(p => {
     pay(p.id, "batida", b);                                         // a Batida é obrigatória
+    const pend = PRIZES.map(q => q.k).filter(k => s.pots[k].carried && !s.pots[k].payers[p.id]);  // acumulados ainda não pagos
+    const novos = PRIZES.map(q => q.k).filter(k => !s.pots[k].carried);
     const resto = s.chips[p.id] || 0;
-    if (resto >= h * PRIZES.length) PRIZES.forEach(q => pay(p.id, q.k, h));
-    else if (resto >= h) s.payPick[p.id] = {max: Math.floor(resto / h)};   // escolhe quais prêmios pagar
+    if (resto >= h * (pend.length + novos.length)) { pend.forEach(k => pay(p.id, k, h)); novos.forEach(k => pay(p.id, k, h)); return; }
+    if (resto >= h * pend.length) {                                 // pendentes primeiro; depois escolhe entre os novos
+      pend.forEach(k => pay(p.id, k, h));
+      const max = Math.floor((s.chips[p.id] || 0) / h);
+      if (max > 0 && novos.length) s.payPick[p.id] = {max, opts: novos, pend: false};
+    } else {
+      const max = Math.floor(resto / h);                            // nem todos os pendentes: escolhe entre eles
+      if (max > 0) s.payPick[p.id] = {max, opts: pend, pend: true};
+    }
   });
 }
 const preparing = s => s.status === "playing" && (s.choosing || Object.keys(s.payPick || {}).length > 0);
@@ -680,7 +732,7 @@ function payPrizes(s, pid, ks){
   if (!pp) return [];
   const h = s.stake.h, ok = [];
   for (const k of ks) {
-    if (ok.length >= pp.max || !PRIZES.some(q => q.k === k) || ok.includes(k) || (s.chips[pid] || 0) < h) continue;
+    if (ok.length >= pp.max || !(pp.opts || []).includes(k) || ok.includes(k) || (s.chips[pid] || 0) < h) continue;
     s.pots[k].amt += h; s.pots[k].payers[pid] = h; s.chips[pid] -= h; ok.push(k);
   }
   delete s.payPick[pid];
@@ -692,7 +744,8 @@ function schedulePay(){
   payTimer = setTimeout(() => {                 // quem não escolher em 30 s paga os primeiros da lista
     payTimer = null;
     if (mode !== "host" || !S || S.status !== "playing") return;
-    Object.keys(S.payPick || {}).forEach(id => payPrizes(S, id, PRIZES.map(q => q.k)));
+    if (S.haltAt) { schedulePay(); return; }
+    Object.keys(S.payPick || {}).forEach(id => payPrizes(S, id, S.payPick[id].opts || []));
     maybeOpen(S); saveHost(); broadcast();
   }, PAY_MS);
 }
@@ -702,31 +755,28 @@ function payPot(s, k, pid){
   pot.paid = pid; s.chips[pid] = (s.chips[pid] || 0) + pot.amt;
   return pot.amt;
 }
-function settle(s, winner){                 // fecha a rodada: Batida para quem bateu, o resto volta
+function settle(s, winner){                 // fecha a rodada: Batida para quem bateu; prêmios sem ganhador acumulam
   if (!s.pots || s.settled) return;
-  const sum = {won: [], back: []};
+  const sum = {won: [], back: [], carry: []};
   if (winner) { const a = payPot(s, "batida", winner); sum.won.push({k:"batida", p:winner, amt:a}); }
-  POTS.forEach(k => {
+  else if (!s.pots.batida.paid) {               // rodada cancelada: a Batida volta
+    Object.entries(s.pots.batida.payers).forEach(([id, v]) => s.chips[id] = (s.chips[id] || 0) + v);
+    s.pots.batida.paid = "devolvido"; sum.back.push("batida");
+  }
+  PRIZES.forEach(({k}) => {
     const pot = s.pots[k];
-    if (pot.paid) { if (k !== "batida") sum.won.push({k, p:pot.paid, amt:pot.amt}); return; }
-    Object.entries(pot.payers).forEach(([id, v]) => s.chips[id] = (s.chips[id] || 0) + v);
-    pot.paid = "devolvido"; sum.back.push(k);
+    if (pot.paid) sum.won.push({k, p:pot.paid, amt:pot.amt});
+    else if (pot.amt > 0) sum.carry.push({k, amt:pot.amt});
   });
   s.settled = true; s.lastSettle = sum;
 }
 function awardPrize(s, k, pid, cards){
   s.prizes[k].winner = pid;
   const amt = payPot(s, k, pid);
-  const key = (s.round || 0) + "-" + s.hist.length;
+  const key = nextKey(s);
   s.hist.push({p:pid, a:"p", k, amt, cards: cards || [], key});
   s.log = nickOf(s, pid) + " ganhou o prêmio " + potName(k) + " (+" + amt + " fichas)!";
-  // o relógio pausa até todos os jogadores (pessoas) confirmarem que viram o alerta
-  const need = s.players.filter(p => !p.bot && (p.id === PID || (conns.get(p.id) && conns.get(p.id).open))).map(p => p.id);
-  if (need.length) {
-    s.acks = s.acks || {};
-    s.acks[key] = {need, got: []};
-    if (s.clockStart && !s.pausedAt) { s.pausedAt = Date.now(); s.ackPaused = true; }
-  }
+  makeAcks(s, key);
 }
 const pendingAcks = s => Object.keys(s.acks || {}).length > 0;
 function ackCheck(s){
@@ -735,10 +785,7 @@ function ackCheck(s){
     a.need = a.need.filter(id => pIdx(s, id) >= 0);
     if (a.need.every(id => a.got.includes(id))) delete s.acks[k];
   });
-  if (!pendingAcks(s) && s.ackPaused && s.pausedAt) {
-    s.pausedTotal = (s.pausedTotal || 0) + (Date.now() - s.pausedAt);
-    s.pausedAt = null; s.ackPaused = false;
-  }
+  if (!pendingAcks(s)) haltEnd(s);
 }
 function closeInitial(s){
   if (!s.initialOpen) return;
@@ -750,10 +797,10 @@ function closeInitial(s){
 }
 let openTimer = null;
 function scheduleOpen(){
-  if (openTimer || mode !== "host" || !S || S.status !== "playing" || !S.initialOpen) return;
+  if (openTimer || mode !== "host" || !S || S.status !== "playing" || !S.initialOpen || S.haltAt) return;
   openTimer = setTimeout(() => {
     openTimer = null;
-    if (mode === "host" && S && S.status === "playing" && S.initialOpen) { closeInitial(S); saveHost(); broadcast(); }
+    if (mode === "host" && S && S.status === "playing" && S.initialOpen && !S.haltAt) { closeInitial(S); saveHost(); broadcast(); }
   }, Math.max(0, S.openUntil - Date.now()));
 }
 
@@ -830,8 +877,10 @@ function removePlayer(s, id){
 function burn(s, pid){
   s.burned = s.burned || {};
   s.burned[pid] = true;
-  s.hist.push({p:pid, a:"q"});
+  const key = nextKey(s);
+  s.hist.push({p:pid, a:"q", key});
   s.log = nickOf(s, pid) + " bateu errado! Agora só pode bater com carta comprada do monte.";
+  makeAcks(s, key);
 }
 const isTurn = (s, pid) => s.status === "playing" && s.players[s.turn] && s.players[s.turn].id === pid;
 function refillStock(s){
@@ -844,6 +893,7 @@ function refillStock(s){
 
 function apply(pid, m){
   const s = S;
+  if (s.haltAt && ["draw","discard","swap","bater","baterLixo","claim","choose","payPrizes"].includes(m.a)) fail("Jogo pausado: aguardando todos confirmarem o alerta.");
   if (s.claim && ["draw","discard","swap"].includes(m.a)) fail("Espere: alguém pediu para bater com o lixo.");
   switch (m.a) {
     case "hello": {
@@ -934,14 +984,13 @@ function apply(pid, m){
     case "lobby":
       if (pid !== PID && pIdx(s, pid) < 0) fail("Só quem está na mesa pode encerrar.");
       if (s.status === "playing") settle(s, null);
-      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null, draft:null});
+      Object.assign(s, {status:"lobby", hands:null, stock:null, discard:null, result:null, log:null, drawn:null, hist:[], claim:null, draft:null, acks:{}, haltAt:null});
       break;
     case "clockPause": {
-      if (!s.clockStart) fail("O relógio começa na primeira compra de carta.");
-      if (pIdx(s, pid) < 0) fail("Só quem está na mesa pode pausar o relógio.");
-      const now = Date.now();
-      if (s.pausedAt) { s.pausedTotal = (s.pausedTotal || 0) + (now - s.pausedAt); s.pausedAt = null; s.acks = {}; s.ackPaused = false; }
-      else { s.pausedAt = now; s.ackPaused = false; }
+      if (!s.clockArmed) fail("O relógio começa na primeira compra de carta.");
+      if (pIdx(s, pid) < 0 && pid !== PID) fail("Só quem está na mesa pode pausar o relógio.");
+      if (pendingAcks(s)) { s.acks = {}; haltEnd(s); s.manualPause = false; s.log = nickOf(s, pid) + " liberou o jogo sem esperar as confirmações."; }
+      else s.manualPause = !s.manualPause;
       s.clockBy = pid;
       break;
     }
@@ -1004,6 +1053,7 @@ function apply(pid, m){
         awardPrize(s, k, pid, prizeCards(k, H, null, ctx)); break;
       }
       if (!(isTurn(s, pid) && s.phase === "discard" && s.drawn)) fail("Agora só vale prêmio com a carta que você acabou de comprar.");
+      if (s.drawnFrom === "lixo") fail("Carta pega do lixo não vale para prêmio.");
       if (!prizeCheck(k, H, s.drawn, ctx)) fail("A carta comprada não forma o prêmio " + potName(k) + ".");
       awardPrize(s, k, pid, prizeCards(k, H, s.drawn, ctx)); break;
     }
@@ -1020,10 +1070,7 @@ function apply(pid, m){
         refillStock(s);
         c = s.stock.pop();
       }
-      if (!s.clockStart) {                             // relógio começa na primeira compra
-        s.clockStart = Date.now();
-        if (pendingAcks(s)) { s.pausedAt = s.clockStart; s.ackPaused = true; }
-      }
+      s.clockArmed = true;                              // relógio começa na primeira compra
       s.hands[pid].push(c); s.phase = "discard"; s.drawn = c; s.drawnFrom = m.from === "lixo" ? "lixo" : "monte";
       s.canSwap = !!s.first && m.from !== "lixo";
       s.log = nickOf(s, pid) + (m.from === "lixo" ? " pegou " + cardName(c) + " do lixo." : " comprou do monte.");
@@ -1133,7 +1180,7 @@ function armClaim(){
   if (claimTimer) return;
   claimTimer = setTimeout(() => {
     claimTimer = null;
-    if (mode === "host" && S && S.claim && S.status === "playing") { finishClaim(S); saveHost(); broadcast(); }
+    if (mode === "host" && S && S.claim && S.status === "playing" && !S.haltAt) { finishClaim(S); saveHost(); broadcast(); }
   }, CLAIM_MS);
 }
 function hostHandle(pid, m){
@@ -1162,7 +1209,8 @@ function viewFor(pid){
     canSwap: isTurn(s, pid) && !!s.canSwap,
     hist: s.hist || [],
     claim: s.claim ? {ids: s.claim.ids.slice(), from: s.claim.from} : null,
-    clk: {el: s.clockStart ? (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0) : null, lim: s.limitMin || 0, paused: !!s.pausedAt, by: s.ackPaused ? null : (s.clockBy || null), ack: !!s.ackPaused},
+    clk: {el: s.clockArmed ? clockElapsed(s) : null, lim: s.limitMin || 0, paused: !s.clockRun, manual: !!s.manualPause, ack: pendingAcks(s), by: s.clockBy || null},
+    halt: !!s.haltAt,
     acks: s.acks || {},
     result: s.status === "roundEnd" ? s.result : null,
     names: s.names || {},
@@ -1170,19 +1218,21 @@ function viewFor(pid){
     chooser: s.chooser || null,
     chosen: s.chosen || null,
     initialOpen: s.status === "playing" && !!s.initialOpen,
-    openIn: s.initialOpen ? Math.max(0, s.openUntil - Date.now()) : 0,
-    lockIn: s.status === "playing" && s.lockUntil ? Math.max(0, s.lockUntil - Date.now()) : 0,
+    openIn: s.initialOpen ? Math.max(0, s.openUntil - (s.haltAt || Date.now())) : 0,
+    lockIn: s.status === "playing" && s.lockUntil ? Math.max(0, s.lockUntil - (s.haltAt || Date.now())) : 0,
+    drawnFrom: isTurn(s, pid) ? s.drawnFrom || null : null,
     prizes: s.prizes ? Object.fromEntries(PRIZES.map(p => [p.k, {winner: s.prizes[p.k].winner, cands: s.prizes[p.k].cands.map(x => x.p)}])) : null,
     pots: s.pots ? Object.fromEntries(POTS.map(k => [k, s.pots[k].amt])) : null,
     paid: s.pots ? POTS.filter(k => s.pots[k].payers[pid]) : [],
-    payPick: s.status === "playing" ? Object.fromEntries(Object.entries(s.payPick || {}).map(([id, v]) => [id, v.max])) : {},
+    payPick: s.status === "playing" ? Object.fromEntries(Object.entries(s.payPick || {}).map(([id, v]) => [id, {max: v.max, opts: v.opts || [], pend: !!v.pend}])) : {},
+    carried: s.pots ? PRIZES.map(q => q.k).filter(k => s.pots[k].carried) : [],
     notice: s.notice || null,
     stake: s.stake || null,
     startChips: s.startChips || 0,
     chips: s.chips || {},
     settle: s.status === "roundEnd" ? s.lastSettle : null,
     burned: Object.keys(s.burned || {}),
-    turnEl: s.status === "playing" && s.turnAt ? Date.now() - s.turnAt : null,
+    turnEl: s.status === "playing" && s.turnAt ? (s.haltAt || Date.now()) - s.turnAt : null,
     draft: s.status === "draft" && s.draft ? {
       n: s.draft.cards.length, ids: s.draft.ids, picks: s.draft.picks, reveal: s.draft.reveal, tie: s.draft.tie,
       winner: s.draft.winner, next: s.draft.next, faces: s.draft.reveal ? Object.fromEntries(Object.values(s.draft.picks).map(k => [k, s.draft.cards[k]])) : {}
@@ -1214,7 +1264,7 @@ function bestDiscard(h, Jk, keep){
 }
 function botPlay(){
   botTimer = null;
-  if (mode !== "host" || !S || S.status !== "playing" || S.claim) return;
+  if (mode !== "host" || !S || S.status !== "playing" || S.claim || S.haltAt) return;
   const p = S.players[S.turn];
   if (!p || !p.bot) return;
   const id = p.id, Jk = S.jokers, h = S.hands[id];
@@ -1222,7 +1272,7 @@ function botPlay(){
   if (S.phase === "draw" && S.lockUntil && Date.now() < S.lockUntil) { botTimer = setTimeout(botPlay, S.lockUntil - Date.now() + 150); return; }
   if (S.phase === "discard" && S.drawn && S.prizes) {
     const ctx = {vira: S.vira, chosen: S.chosen};
-    const k = PRIZES.map(q => q.k).find(k => !S.prizes[k].winner && S.pots[k].payers[id] && prizeCheck(k, h, S.drawn, ctx));
+    const k = S.drawnFrom === "lixo" ? null : PRIZES.map(q => q.k).find(k => !S.prizes[k].winner && S.pots[k].payers[id] && prizeCheck(k, h, S.drawn, ctx));
     if (k) { hostHandle(id, {a:"claim", k}); return; }
   }
   try {
@@ -1252,18 +1302,18 @@ function botPlay(){
 let botClaimTimer = null, botPrizeTimer = null;
 let botPayTimer = null;
 function scheduleBotPay(){
-  if (botPayTimer || mode !== "host" || !S || S.status !== "playing") return;
+  if (botPayTimer || mode !== "host" || !S || S.status !== "playing" || S.haltAt) return;
   const bot = S.players.find(p => p.bot && S.payPick && S.payPick[p.id]);
   if (!bot) return;
   botPayTimer = setTimeout(() => {
     botPayTimer = null;
     if (!S || !S.payPick || !S.payPick[bot.id]) return;
-    const ks = shuffle(PRIZES.map(q => q.k)).slice(0, S.payPick[bot.id].max);
+    const ks = shuffle((S.payPick[bot.id].opts || []).slice()).slice(0, S.payPick[bot.id].max);
     hostHandle(bot.id, {a:"payPrizes", ks});
   }, Math.round(BOT_DELAY * .8) + rnd(Math.max(1, Math.round(BOT_DELAY * .5))));
 }
 function scheduleBotPrizes(){
-  if (botPrizeTimer || mode !== "host" || !S || S.status !== "playing" || !S.initialOpen) return;
+  if (botPrizeTimer || mode !== "host" || !S || S.status !== "playing" || !S.initialOpen || S.haltAt) return;
   const ctx = {vira: S.vira, chosen: S.chosen}, opts = [];
   S.players.forEach(q => { if (!q.bot) return; PRIZES.forEach(({k}) => {
     const pr = S.prizes[k];
@@ -1273,12 +1323,12 @@ function scheduleBotPrizes(){
   if (!opts.length) return;
   const [qid, k] = opts[rnd(opts.length)];
   const restante = Math.max(300, S.openUntil - Date.now() - 400);
-  botPrizeTimer = setTimeout(() => { botPrizeTimer = null; if (S && S.initialOpen) hostHandle(qid, {a:"claim", k}); },
+  botPrizeTimer = setTimeout(() => { botPrizeTimer = null; if (S && S.initialOpen && !S.haltAt) hostHandle(qid, {a:"claim", k}); },
     Math.min(restante, Math.round(BOT_DELAY * (1.2 + Math.random() * 2.5))));
 }
 let botChooseTimer = null;
 function scheduleBot(){
-  if (mode !== "host" || !S || S.status !== "playing") return;
+  if (mode !== "host" || !S || S.status !== "playing" || S.haltAt) return;
   const jitter = () => rnd(Math.max(1, Math.round(BOT_DELAY * .5)));
   if (S.choosing && !botChooseTimer) {
     const ch = S.players.find(p => p.id === S.chooser);
@@ -1294,7 +1344,7 @@ function scheduleBot(){
     if (cands.length) {
       const q = cands[0];
       const delay = S.claim ? 300 + rnd(400) : Math.round(BOT_DELAY * 1.2) + jitter();
-      botClaimTimer = setTimeout(() => { botClaimTimer = null; hostHandle(q.id, {a:"baterLixo"}); }, delay);
+      botClaimTimer = setTimeout(() => { botClaimTimer = null; if (S && !S.haltAt) hostHandle(q.id, {a:"baterLixo"}); else scheduleBot(); }, delay);
       return;
     }
   }
@@ -1322,7 +1372,21 @@ function broadcast(){
   V = viewFor(PID); render();
   scheduleBot(); scheduleBotPick(); scheduleDraft(); scheduleOpen(); scheduleBotPrizes(); scheduleBotPay(); schedulePay();
 }
-function saveHost(){ lsSet("cacheta-host", JSON.stringify({code: CODE, pid: PID, s: S})); }
+function saveHost(){ clockSync(S); lsSet("cacheta-host", JSON.stringify({code: CODE, pid: PID, s: S})); }
+// alerta de tempo: o anfitrião detecta e todos confirmam
+setInterval(() => {
+  if (mode !== "host" || !S || S.status !== "playing" || !S.limitMin || !S.clockRun) return;
+  const cyc = Math.floor(clockElapsed(S) / (S.limitMin * 60000));
+  if (S.lastCycle == null) { S.lastCycle = cyc; return; }
+  if (cyc > S.lastCycle) {
+    S.lastCycle = cyc;
+    const key = nextKey(S);
+    S.hist.push({a:"tempo", n: cyc, min: S.limitMin, key});
+    S.log = "Tempo! " + (cyc * S.limitMin) + " min de jogo. As apostas dobram na próxima rodada.";
+    makeAcks(S, key);
+    saveHost(); broadcast();
+  }
+}, 1000);
 function migrate(s){
   if (!s) return s;
   if (s.vira && !s.jokers) s.jokers = jokersFor(s.vira);
@@ -1334,6 +1398,12 @@ function migrate(s){
   if (!s.names) { s.names = {}; s.players.forEach(p => s.names[p.id] = p.nick); }
   if (!s.chips) s.chips = {};
   if (!s.payPick) s.payPick = {};
+  if (s.clockStart && s.clockAcc == null) {           // versão anterior do relógio
+    s.clockAcc = Math.max(0, (s.pausedAt || Date.now()) - s.clockStart - (s.pausedTotal || 0));
+    s.clockArmed = true; s.clockRun = null;
+    if (s.limitMin) s.lastCycle = Math.floor(s.clockAcc / (s.limitMin * 60000));
+    delete s.clockStart; delete s.pausedAt; delete s.pausedTotal; delete s.ackPaused;
+  }
   if (s.status === "playing" && !s.prizes) { s.prizes = {}; PRIZES.forEach(p => s.prizes[p.k] = {winner: null, cands: []}); }
   if (s.status === "playing" && !s.pots) setupPots(s);
   return s;
@@ -1342,7 +1412,7 @@ function migrate(s){
 /* =================== anfitrião: rede =================== */
 let hostTries = 0;
 function startHost(code, state){
-  mode = "host"; CODE = code; S = migrate(state); V = viewFor(PID);
+  mode = "host"; CODE = code; S = migrate(state); clockSync(S); V = viewFor(PID);
   history.replaceState(null, "", location.pathname + "?mesa=" + CODE);
   saveHost(); net = "Abrindo a mesa…"; render(); wakeLock(); scheduleBot(); scheduleBotPick(); scheduleDraft(); scheduleOpen(); scheduleBotPrizes(); scheduleBotPay(); schedulePay();
   if (typeof Peer === "undefined") { net = "Sem internet: não consegui carregar a conexão."; render(); return; }
@@ -1458,11 +1528,11 @@ function syncClock(){
   clockBase = V.clk.el == null ? null : Date.now() - V.clk.el;
   const was = clockPaused;
   clockPaused = !!V.clk.paused; clockFrozen = V.clk.el || 0;
-  if (was !== clockPaused && clockBase != null && V.clk.by) toast(`${V.clk.by === V.me ? "Você" : nk(V.clk.by)} ${clockPaused ? "pausou" : "retomou"} o relógio.`);
+  if (was !== clockPaused && clockBase != null && V.clk.by && V.clk.manual === clockPaused && !V.clk.ack) toast(`${V.clk.by === V.me ? "Você" : nk(V.clk.by)} ${clockPaused ? "pausou" : "retomou"} o relógio.`);
 }
 function clockText(){
   const el = clockEl(), limMs = clockLim * 60000;
-  return `${fmtTime(limMs ? el % limMs : el)}${clockPaused ? ` <small>${V && V.clk && V.clk.ack ? "aguardando" : "pausado"}</small>` : limMs ? ` <small>/ ${clockLim} min</small>` : ""}`;
+  return `${fmtTime(limMs ? el % limMs : el)}${clockPaused ? ` <small>${V && V.clk && V.clk.ack ? "aguardando" : V && V.clk && V.clk.manual ? "pausado" : "parado"}</small>` : limMs ? ` <small>/ ${clockLim} min</small>` : ""}`;
 }
 function clockHTML(){
   if (clockBase == null) return `<span class="clock off" id="clock" title="Começa na primeira compra">0:00</span>`;
@@ -1510,7 +1580,7 @@ function showSlow(mins){
   clearTimeout(alarmT); alarmT = setTimeout(() => a.hidden = true, 15000);
 }
 setInterval(() => {
-  if (mode === "start" || !V || V.status !== "playing" || V.claim || turnBase == null) return;
+  if (mode === "start" || !V || V.status !== "playing" || V.claim || V.halt || turnBase == null) return;
   const p = V.players[V.turn];
   if (!p || p.bot) return;
   const mins = Math.floor((Date.now() - turnBase) / SLOW_MS);
@@ -1522,11 +1592,6 @@ setInterval(() => {
   const el = clockEl(), limMs = clockLim * 60000;
   const c = $("#clock");
   if (c) c.innerHTML = clockText();
-  if (limMs) {
-    const cyc = Math.floor(el / limMs);
-    if (lastCycle == null) lastCycle = cyc;          // ao entrar no meio, não avisa ciclos passados
-    else if (cyc > lastCycle) { lastCycle = cyc; showAlarm(cyc); }
-  }
 }, 1000);
 
 /* =================== alertas grandes =================== */
@@ -1537,18 +1602,17 @@ function syncBig(){
   if (V.status === "lobby" || V.status === "draft") { seenRound = null; seenLen = 0; return; }
   if (seenRound !== V.round) { seenRound = V.round; seenLen = V.hist.length; return; }   // ao entrar, não repete o passado
   const novos = V.hist.slice(seenLen); seenLen = V.hist.length;
-  novos.forEach(e => {
-    if (e.a === "q") bigQ.push({cls:"bad", k:"Batida errada", t:(e.p === V.me ? "Você" : nk(e.p)) + " bateu errado!", d:"Agora só pode bater com carta comprada do monte."});
-    if (e.a === "p") queuePrize(e);
-  });
+  novos.forEach(e => { if (e.a === "q" || e.a === "p" || e.a === "tempo") queuePrize(e); });
   // quem entrou ou voltou no meio também confirma os alertas pendentes
-  (V.hist || []).forEach(e => { if (e.a === "p" && e.key && needsMyAck(e.key)) queuePrize(e); });
+  (V.hist || []).forEach(e => { if ((e.a === "p" || e.a === "q" || e.a === "tempo") && e.key && needsMyAck(e.key)) queuePrize(e); });
   if (!bigT && !bigCur) nextBig();
 }
 function queuePrize(e){
   if (e.key && bigShown.has(e.key)) return;
   if (e.key) bigShown.add(e.key);
-  bigQ.push({cls:"win", k:"Prêmio", t:potName(e.k), d:(e.p === V.me ? "Você ganhou" : nk(e.p) + " ganhou") + " +" + e.amt + " fichas (" + reais(e.amt) + ")", cards: e.cards || [], key: e.key});
+  if (e.a === "q") bigQ.push({cls:"bad", k:"Batida errada", t:(e.p === V.me ? "Você" : nk(e.p)) + " bateu errado!", d:"Agora só pode bater com carta comprada do monte.", key: e.key});
+  else if (e.a === "tempo") bigQ.push({cls:"time", k:"Tempo", t:(e.n * e.min) + " min de jogo", d:"O relógio recomeçou. As apostas dobram na próxima rodada.", key: e.key});
+  else bigQ.push({cls:"win", k:"Prêmio", t:potName(e.k), d:(e.p === V.me ? "Você ganhou" : nk(e.p) + " ganhou") + " +" + e.amt + " fichas (" + reais(e.amt) + ")", cards: e.cards || [], key: e.key});
 }
 function nextBig(){
   const el = $("#big"), it = bigQ.shift();
@@ -1558,7 +1622,7 @@ function nextBig(){
   el.className = "big " + it.cls;
   el.innerHTML = `<div class="bx"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.t)}</span><span class="d">${esc(it.d)}</span>
     ${it.cards && it.cards.length ? `<div class="bc">${it.cards.map(c => cardHTML(c, "md")).join("")}</div>` : ""}
-    ${it.key ? `<button class="ok" id="bigOk">${pede ? "Ok, vi" : "Fechar"}</button><span class="w">${pede ? "O relógio volta a correr quando todos confirmarem." : ""}</span>` : ""}</div>`;
+    ${it.key ? `<button class="ok" id="bigOk">${pede ? "Ok, vi" : "Fechar"}</button><span class="w">${pede ? "O jogo continua quando todos confirmarem." : ""}</span>` : ""}</div>`;
   el.hidden = false;
   const fechar = () => { if (it.key && needsMyAck(it.key)) act("ack", {key: it.key}); nextBig(); };
   if (it.key) { $("#bigOk").onclick = e => { e.stopPropagation(); fechar(); }; el.onclick = null; if (!pede) bigT = setTimeout(nextBig, 5000); }
@@ -1573,8 +1637,8 @@ let openEnd = 0, lockEnd = 0, timingV = null, pickR = null, pickS = null, cdWasA
 function syncTiming(){
   if (!V || V === timingV) return;
   timingV = V;
-  openEnd = V.initialOpen ? Date.now() + (V.openIn || 0) : 0;
-  lockEnd = V.lockIn ? Date.now() + V.lockIn : 0;
+  openEnd = V.initialOpen && !V.halt ? Date.now() + (V.openIn || 0) : 0;
+  lockEnd = V.lockIn && !V.halt ? Date.now() + V.lockIn : 0;
   if (!V.choosing) { pickR = null; pickS = null; }
   if (!(V.payPick && V.payPick[V.me])) paySel = new Set();
 }
@@ -1601,29 +1665,30 @@ function saldoHTML(){
 function prizesHTML(){
   if (!V.pots || !V.prizes) return "";
   const ctx = {vira: V.vira, chosen: V.chosen}, mine = V.hand;
-  const comCompra = myTurn() && V.phase === "discard" && V.drawn;
+  const comCompra = myTurn() && V.phase === "discard" && V.drawn && V.drawnFrom !== "lixo" && !V.halt;
   return `<div class="prizes">${POTS.map(k => {
     const amt = V.pots[k] || 0;
     if (k === "batida") return `<div class="pz bat"><span class="pn">Batida${V.stake && V.stake.cycles ? " ×" + Math.pow(2, V.stake.cycles) : ""}</span><span class="pv">${amt} f</span><span class="pw">${reais(amt)}</span></div>`;
     const pr = V.prizes[k], won = pr.winner, asked = pr.cands.includes(V.me);
     const pago = (V.paid || []).includes(k);
-    const can = pago && !won && mine && !V.choosing && (V.initialOpen ? (!asked && prizeCheck(k, mine, null, ctx)) : (comCompra && prizeCheck(k, mine, V.drawn, ctx)));
+    const can = pago && !won && mine && !V.choosing && !V.halt && (V.initialOpen ? (!asked && prizeCheck(k, mine, null, ctx)) : (comCompra && prizeCheck(k, mine, V.drawn, ctx)));
     const nome = SHORT[k], extra = k === "escolhida" && V.chosen ? ` <span style="color:${isRed(V.chosen)&&!0?"#f87171":"inherit"}">${cardName(V.chosen + "0")}</span>` : "";
-    const sub = won ? "✓ " + esc(nk(won)) : (V.seated && !pago) ? "não pagou" : asked ? "mostrado" : (k === "maior" && V.initialOpen && pr.cands.length ? pr.cands.length + " mostrou" : reais(amt));
+    const acum = (V.carried || []).includes(k);
+    const sub = won ? "✓ " + esc(nk(won)) : (V.seated && !pago) ? "não pagou" : acum && !asked ? "acumulado" : asked ? "mostrado" : (k === "maior" && V.initialOpen && pr.cands.length ? pr.cands.length + " mostrou" : reais(amt));
     return `<button class="pz ${won?"won":""} ${can?"can":""}" data-claim="${k}" ${can?"":"disabled"} aria-label="Prêmio ${potName(k)}"><span class="pn">${nome}</span><span class="pv">${amt} f${extra}</span><span class="pw">${sub}</span></button>`;
   }).join("")}</div>`;
 }
 function payPanelHTML(){
-  const max = V.payPick && V.payPick[V.me];
+  const pp = V.payPick && V.payPick[V.me], max = pp && pp.max;
   const pend = Object.keys(V.payPick || {}).filter(id => id !== V.me);
   let html = "";
   if (max) {
-    const h = V.stake ? V.stake.h : 1, f = V.chips[V.me] || 0;
+    const h = V.stake ? V.stake.h : 1, f = V.chips[V.me] || 0, opts = PRIZES.filter(q => pp.opts.includes(q.k));
     html += `<section class="panel" style="border-color:var(--o)">
       <div class="eyebrow">Fichas curtas</div>
       <h2>Escolha seus prêmios</h2>
-      <p class="muted" style="margin:0">Depois da Batida você tem ${f} ${f===1?"ficha":"fichas"}: dá para pagar até <b style="color:var(--o)">${max}</b> dos 6 prêmios (${h} ${h===1?"ficha":"fichas"} cada). Você só pode ganhar os prêmios que pagar.</p>
-      <div class="pick-s" style="grid-template-columns:repeat(3,minmax(0,1fr))">${PRIZES.map(q => `<button data-pay="${q.k}" class="${paySel.has(q.k)?"on":""}" style="font-family:var(--ui);font-size:.85rem;font-weight:700" ${!paySel.has(q.k) && paySel.size >= max ? "disabled" : ""}>${q.n}</button>`).join("")}</div>
+      <p class="muted" style="margin:0">${pp.pend ? `Você ainda não pagou ${opts.length} ${opts.length===1?"prêmio acumulado":"prêmios acumulados"} da rodada anterior e eles vêm primeiro.` : (V.carried && V.carried.length ? "Os prêmios acumulados já foram pagos. " : "")} Com ${f} ${f===1?"ficha":"fichas"}, dá para pagar até <b style="color:var(--o)">${max}</b> ${pp.pend ? "deles" : "dos prêmios abaixo"} (${h} ${h===1?"ficha":"fichas"} cada). Você só pode ganhar os prêmios que pagou.</p>
+      <div class="pick-s" style="grid-template-columns:repeat(3,minmax(0,1fr))">${opts.map(q => `<button data-pay="${q.k}" class="${paySel.has(q.k)?"on":""}" style="font-family:var(--ui);font-size:.85rem;font-weight:700" ${!paySel.has(q.k) && paySel.size >= max ? "disabled" : ""}>${q.n}</button>`).join("")}</div>
       <button class="primary" id="btnPay">${paySel.size ? "Pagar " + paySel.size + " " + (paySel.size === 1 ? "prêmio" : "prêmios") : "Não pagar nenhum prêmio"}</button>
     </section>`;
   }
@@ -1705,11 +1770,13 @@ function rulesPanel(){
       <li>Se alguém demorar mais de 1 minuto na vez, um alarme aparece na tela.</li>
       <li>Cada batida vale <b>1 vitória</b> no placar.</li>
       <li><b>Sem fichas para a Batida?</b> No começo da rodada, quem não consegue pagar a Batida sai do jogo e as fichas que sobraram com ele são divididas entre os que continuam. Quem paga a Batida mas não tem fichas para todos os prêmios <b>escolhe</b> quais vai pagar (antes de ver a mão) e só pode ganhar esses.</li>
-      <li><b>Apostas</b>: cada jogador começa com as fichas definidas na criação da mesa. 1 ficha = R$ 0,10. Por rodada, cada um põe 2 fichas na Batida e 1 em cada prêmio. Os valores dobram a cada alerta de tempo. Quem bate leva a Batida. Prêmio que ninguém ganhou volta para os jogadores.</li>
+      <li><b>Apostas</b>: cada jogador começa com as fichas definidas na criação da mesa. 1 ficha = R$ 0,10. Por rodada, cada um põe 2 fichas na Batida e 1 em cada prêmio. Os valores dobram a cada alerta de tempo. Quem bate leva a Batida. Prêmio que ninguém ganhou <b>acumula</b> para a rodada seguinte: só paga de novo quem ainda não pagou, e esses prêmios pendentes são pagos antes dos outros. Quando alguém sai por falta de fichas, o relógio zera.</li>
       <li><b>Prêmios</b>: Maior (carta mais alta do naipe do coringa, de Ás a 10; 10 é a maior), Ás de Copas, 6 e 9 do mesmo naipe, Sequência de 4 do mesmo naipe (sem coringa), Duplicada (duas cartas iguais) e Escolhida (carta definida por quem começa, antes de ver a mão).</li>
       <li>Depois de dar as cartas, há <b>10 s</b> para mostrar prêmios com a mão inicial (no Maior, leva quem mostrar a mais alta). Depois disso, prêmio só vale formado com a <b>carta que você acabou de comprar</b>.</li>
       <li>Depois de cada descarte, o próximo jogador espera <b>3 s</b> para comprar.</li>
-      <li>Quando sai um prêmio, todos veem as cartas usadas e o <b>relógio pausa</b> até todo mundo tocar em "Ok, vi". Se alguém sumir, toque no relógio para retomar.</li>
+      <li>Prêmio, batida errada e alerta de tempo <b>param o jogo e o relógio</b> até todos tocarem em "Ok, vi". Se alguém sumir, toque no relógio para liberar.</li>
+      <li>Carta pega do lixo <b>não vale</b> para prêmio.</li>
+      <li>O relógio só corre durante as compras e os descartes.</li>
     </ul>
   </section>`;
 }
@@ -1781,7 +1848,7 @@ function renderLobby(){
   </section>
   <section class="panel">
     <h2>Relógio da mesa</h2>
-    <p class="muted" style="margin:0;font-size:.85rem">Começa a contar na primeira compra de carta. Toque no relógio no topo para pausar ou retomar. ${V.clk && V.clk.lim ? `A cada <b style="color:var(--o)">${V.clk.lim} min</b> aparece um alerta e o relógio recomeça.` : "Sem alerta de tempo."} Não muda nada no jogo.</p>
+    <p class="muted" style="margin:0;font-size:.85rem">Corre só durante as compras e os descartes (para nos alertas, nos 10 s de prêmios e entre rodadas). Toque no relógio no topo para pausar ou retomar. ${V.clk && V.clk.lim ? `A cada <b style="color:var(--o)">${V.clk.lim} min</b> aparece um alerta e o relógio recomeça.` : "Sem alerta de tempo."} Não muda nada no jogo.</p>
     ${mode==="host" ? `<div class="row"><input id="limEdit" class="grow" type="number" inputmode="numeric" min="0" max="600" placeholder="Minutos (vazio = sem alerta)" value="${V.clk && V.clk.lim ? V.clk.lim : ""}"><button id="btnLim">Salvar</button></div>` : ""}
   </section>
   ${rulesPanel()}`;
@@ -1817,7 +1884,7 @@ function renderGame(){
       groups.forEach(g => g.cards.forEach((c,k) => mark[c] = {kind:g.kind, s:k===0, e:k===g.cards.length-1}));
     } else syncOrder(V.hand);
   }
-  const espera = V.initialOpen || locked();
+  const espera = V.initialOpen || locked() || V.halt;
   const canDraw = mine && V.phase === "draw" && !V.claim && !espera;
   const bat = mine && V.phase === "discard" ? findBatida(V.hand, Jk) : null;
   const lastEv = V.hist && V.hist[V.hist.length-1];
@@ -1837,6 +1904,10 @@ function renderGame(){
   if (V.initialOpen) status = `Prêmios de mão: <b id="cd">${secsLeft(openEnd)}</b> s para mostrar. Depois, ${mine ? "você compra" : who + " compra"}.`;
   else if (locked() && V.phase === "draw") status = mine ? `Sua vez em <b id="cd">${secsLeft(lockEnd)}</b> s…` : `${who} compra em <b id="cd">${secsLeft(lockEnd)}</b> s…`;
   if (canFora) status = `O ${cardName(V.top)} do lixo fecha a sua batida! Toque em Bater.`;
+  if (V.halt) {
+    const falta = [...new Set(Object.values(V.acks || {}).flatMap(a => a.need.filter(id => !a.got.includes(id))))];
+    status = `Jogo pausado: aguardando ${falta.map(id => id === V.me ? "você" : esc(nk(id))).join(", ") || "confirmações"} confirmar o alerta.`;
+  }
   if (V.claim) {
     const quem = claimIds.map(id => id === V.me ? "Você" : esc(nk(id))).join(" e ");
     status = iClaimed ? `Você pediu para bater. Conferindo quem tem a preferência…`
@@ -1910,7 +1981,8 @@ function renderEnd(){
   ${V.settle ? `<section class="panel">
     <h2>Fichas da rodada</h2>
     <ul class="plist">${V.settle.won.map(w => `<li><span class="n">${potName(w.k)}</span><span class="muted">${esc(nk(w.p))}</span><span class="w">+${w.amt} f</span></li>`).join("") || '<li><span class="n muted">Nenhum prêmio saiu.</span></li>'}</ul>
-    ${V.settle.back.length ? `<p class="muted" style="margin:0;font-size:.85rem">Sem ganhador, as fichas voltaram: ${V.settle.back.map(potName).join(", ")}.</p>` : ""}
+    ${V.settle.carry && V.settle.carry.length ? `<p class="muted" style="margin:0;font-size:.85rem">Sem ganhador, <b style="color:var(--o)">acumulam</b> para a próxima rodada: ${V.settle.carry.map(c => potName(c.k) + " (" + c.amt + " f)").join(", ")}. Só paga de novo quem ainda não pagou.</p>` : ""}
+    ${V.settle.back && V.settle.back.length ? `<p class="muted" style="margin:0;font-size:.85rem">Rodada cancelada: a Batida voltou para os jogadores.</p>` : ""}
   </section>` : ""}
   <section class="panel">
     <h2>Saldo</h2>
@@ -1985,6 +2057,7 @@ function evText(e){
   if (e.a === "e") return `<span style="color:#fca5a5">${who} ficou sem fichas para a Batida e saiu${e.amt ? ` (${e.amt} fichas divididas, ${e.share} para cada)` : ""}</span>`;
   if (e.a === "p") return `<span class="lx">${who} ganhou o prêmio ${potName(e.k)} (+${e.amt} fichas)${e.cards && e.cards.length ? " com " + e.cards.map(cardName).join(" ") : ""}</span>`;
   if (e.a === "q") return `<span style="color:#fca5a5">${who} bateu errado</span>`;
+  if (e.a === "tempo") return `Tempo: ${e.n * e.min} min de jogo`;
   return "";
 }
 function openHist(){
