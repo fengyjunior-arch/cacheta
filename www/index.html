@@ -57,9 +57,16 @@ input.code{text-transform:uppercase;letter-spacing:.3em;font-weight:800;text-ali
 .game .top button{min-height:32px;padding:4px 10px}
 .game .opp{padding:5px 8px;gap:2px}
 .game .table{flex:1 1 auto;min-height:calc(var(--tc) * 1.4 + 34px);overflow:hidden;padding:8px;gap:8px;--tc:clamp(46px,min(18vw,11.5dvh),104px);justify-content:space-evenly}
-.game .trailbox{padding-top:6px;gap:4px}
-.game .trailhead button{min-height:26px;padding:2px 10px}
+.game .trailbox{padding-top:4px;gap:2px}
+.game .trailhead .lbl{font-size:.62rem}
+.game .trail{gap:5px;padding:1px 2px 2px}
+.game .trail .card.xs{width:24px;border-radius:4px}
+.game .trail .card.xs .r{font-size:.62rem}
+.game .trail .card.xs .s{font-size:.8rem}
+.game .trail .w{font-size:.52rem;max-width:36px}
+.game .trailhead button{min-height:22px;padding:1px 9px;font-size:.66rem}
 .game .trail{min-height:0}
+.game .trail .t{gap:1px}
 .game .status{font-size:.95rem;min-height:1.25em}
 .game .log{font-size:.72rem;margin-top:-4px}
 .game .handwrap{gap:6px}
@@ -223,9 +230,9 @@ button.card:active{background:var(--face)}
 @media (prefers-reduced-motion:reduce){#btnBater.ready{animation:none}.hand .card{transition:none}}
 
 /* sorteio */
-.draft{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;justify-items:center}
+.draft{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;justify-items:center}
 .draft .dc{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;padding:0;min-height:0;width:100%}
-.draft .dc .back,.draft .dc .card{width:100%;max-width:84px}
+.draft .dc .back,.draft .dc .card{width:100%;max-width:min(72px,10dvh)}
 .draft .dc .card .r{font-size:clamp(1.1rem,6vw,1.9rem)}
 .draft .dc .card .s{font-size:clamp(1.6rem,9vw,2.8rem)}
 .draft .dc .card .s1{display:none}
@@ -879,11 +886,11 @@ function scheduleOpen(){
 }
 
 /* ---------- sorteio de quem começa (1ª rodada) ---------- */
-const DRAFT_SIZE = 12;
-const drawVal = c => rk(c) === "A" ? 14 : rv(c);      // Ás é a maior
+const DRAFT_SIZE = 20;
+const drawVal = c => rv(c);      // só Ás a 10: Ás é a menor, 10 a maior
 function startDraft(s, ids, tie){
   s.status = "draft";
-  s.draft = {cards: newDeck().slice(0, DRAFT_SIZE), picks: {}, ids: ids.slice(), reveal: false, tie: !!tie, winner: null, next: null};
+  s.draft = {cards: newDeck().filter(c => "A23456789T".includes(rk(c))).slice(0, DRAFT_SIZE), picks: {}, ids: ids.slice(), reveal: false, tie: !!tie, winner: null, next: null};
   s.log = tie ? "Empate! Quem empatou escolhe de novo." : "Cada um escolhe uma carta. A maior começa comprando.";
 }
 function checkDraft(s){
@@ -1839,7 +1846,7 @@ function rulesPanel(){
     <h2>Regras desta mesa</h2>
     <ul class="rules">
       <li>A ordem de jogo é a ordem de entrada na mesa; o anfitrião pode mudá-la antes da primeira rodada.</li>
-      <li>Na primeira rodada, cada um escolhe uma carta virada: <b>a maior começa comprando</b> (Ás é a maior; empate escolhe de novo). Depois, <b>quem bateu dá as cartas</b> da rodada seguinte.</li>
+      <li>Na primeira rodada, cada um escolhe uma carta virada: <b>a maior começa comprando</b> (só cartas de Ás a 10: Ás é a menor e 10 a maior; empate escolhe de novo). Depois, <b>quem bateu dá as cartas</b> da rodada seguinte.</li>
       <li>2 baralhos, <b>9 cartas</b> para cada um. O jogo começa <b>sem lixo</b>.</li>
       <li>Uma carta é virada: a <b>vira</b>. São <b>coringas</b> a outra cópia da vira e a carta seguinte do mesmo naipe (vira 5♥ → coringas 5♥ e 6♥; vira K♠ → K♠ e A♠).</li>
       <li>A carta <b>Escolhida</b> é definida por quem começa na 1ª rodada e, nas seguintes, por quem bateu a rodada anterior.</li>
@@ -1996,7 +2003,7 @@ function renderGame(){
       : iHavePref ? `${quem} pediu para bater, mas você vem antes na rodada: bata agora!`
       : `${quem} pediu para bater com o ${cardName(V.top)}…`;
   }
-  const recent = discardsWithPicks().slice(-14).reverse();
+  const recent = discardsWithPicks().slice(-12).reverse();
   let gsum = "";
   if (groups) {
     const nj = groups.filter(g => g.kind==="jogo").length, np = groups.filter(g => g.kind==="par").length;
@@ -2084,7 +2091,7 @@ function renderDraft(){
   const faltam = d.ids.filter(id => d.picks[id] == null).map(id => esc(nk(id)));
   let msg;
   if (d.reveal) msg = d.winner ? `<b style="color:var(--o)">${esc(nk(d.winner))}</b> tirou a maior carta e começa comprando!` : `Empate entre ${d.next.map(id=>esc(nk(id))).join(" e ")}. Eles escolhem de novo…`;
-  else if (inDraft && mine == null) msg = `Escolha uma carta virada. A maior começa comprando (Ás é a maior).`;
+  else if (inDraft && mine == null) msg = `Escolha uma carta virada. A maior começa comprando (Ás é a menor, 10 a maior).`;
   else msg = `Esperando: ${faltam.join(", ")}`;
   return `
   ${topHTML(false)}
