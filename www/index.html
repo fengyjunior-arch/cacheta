@@ -786,9 +786,9 @@ function payPot(s, k, pid){
   pot.paid = pid; s.chips[pid] = (s.chips[pid] || 0) + pot.amt;
   return pot.amt;
 }
-function settle(s, winner){                 // fecha a rodada: Batida para quem bateu; prêmios sem ganhador acumulam
+function settle(s, winner){                 // fecha a rodada: Batida para quem bateu; prêmios sem ganhador voltam para quem pagou
   if (!s.pots || s.settled) return;
-  const sum = {won: [], back: [], carry: []};
+  const sum = {won: [], back: [], carry: [], ret: []};
   if (winner) { const a = payPot(s, "batida", winner); sum.won.push({k:"batida", p:winner, amt:a}); }
   else if (!s.pots.batida.paid) {               // rodada cancelada: a Batida volta
     Object.entries(s.pots.batida.payers).forEach(([id, v]) => s.chips[id] = (s.chips[id] || 0) + v);
@@ -798,7 +798,12 @@ function settle(s, winner){                 // fecha a rodada: Batida para quem 
     const pot = s.pots[k];
     if (pot.paid && pot.split) pot.split.forEach(x => sum.won.push({k, p:x.p, amt:x.amt}));
     else if (pot.paid) sum.won.push({k, p:pot.paid, amt:pot.amt});
-    else if (pot.amt > 0) sum.carry.push({k, amt:pot.amt});
+    else {
+      const ps = Object.entries(pot.payers);
+      ps.forEach(([id, v]) => s.chips[id] = (s.chips[id] || 0) + v);
+      pot.paid = "devolvido";
+      if (ps.length) sum.ret.push({k, amt: pot.amt, n: ps.length});
+    }
   });
   s.settled = true; s.lastSettle = sum;
 }
@@ -1848,7 +1853,7 @@ function rulesPanel(){
       <li>Se alguém demorar mais de 1 minuto na vez, um alarme aparece na tela.</li>
       <li>Cada batida vale <b>1 vitória</b> no placar.</li>
       <li><b>Sem fichas para a Batida?</b> No começo da rodada, quem não consegue pagar a Batida sai do jogo e as fichas que sobraram com ele são divididas entre os que continuam. Quem paga a Batida mas não tem fichas para todos os prêmios <b>escolhe</b> quais vai pagar (antes de ver a mão) e só pode ganhar esses.</li>
-      <li><b>Apostas</b>: cada jogador começa com as fichas definidas na criação da mesa. 1 ficha = R$ 0,10. Por rodada, cada um põe 2 fichas na Batida e 1 em cada prêmio. Os valores dobram a cada alerta de tempo. Quem bate leva a Batida. Prêmio que ninguém ganhou <b>acumula</b> para a rodada seguinte: só paga de novo quem ainda não pagou, e esses prêmios pendentes são pagos antes dos outros. Quando alguém sai por falta de fichas, o relógio zera.</li>
+      <li><b>Apostas</b>: cada jogador começa com as fichas definidas na criação da mesa. 1 ficha = R$ 0,10. Por rodada, cada um põe 2 fichas na Batida e 1 em cada prêmio. Os valores dobram a cada alerta de tempo. Quem bate leva a Batida. No fim da rodada, prêmio que ninguém ganhou <b>volta</b> para quem pagou. Quando alguém sai por falta de fichas, o relógio zera.</li>
       <li><b>Prêmios</b>: Maior (carta mais alta do naipe do coringa, de Ás a 10; 10 é a maior; <b>só com a mão inicial</b>; empate divide o prêmio), Ás de Copas, 6 e 9 do mesmo naipe, Sequência de 4 do mesmo naipe (sem coringa), Duplicada (duas cartas iguais) e Escolhida (carta definida por quem começa, antes de ver a mão).</li>
       <li>Depois de dar as cartas, há <b>20 s</b> para pedir prêmios com a mão inicial. Os pedidos ficam em segredo e o resultado de todos sai junto no fim da contagem. Se dois pedirem o mesmo prêmio, leva quem está mais perto da vez; em Duplicada, 6 e 9 e Sequência, o jogo no <b>naipe do coringa</b> vence os outros naipes. No Maior, leva a carta mais alta. Depois disso, prêmio só vale formado com a <b>carta que você acabou de comprar</b>.</li>
       <li>Depois de cada descarte, o próximo jogador espera <b>3 s</b> para comprar.</li>
@@ -2058,6 +2063,7 @@ function renderEnd(){
   ${V.settle ? `<section class="panel">
     <h2>Fichas da rodada</h2>
     <ul class="plist">${V.settle.won.map(w => `<li><span class="n">${potName(w.k)}</span><span class="muted">${esc(nk(w.p))}</span><span class="w">+${w.amt} f</span></li>`).join("") || '<li><span class="n muted">Nenhum prêmio saiu.</span></li>'}</ul>
+    ${V.settle.ret && V.settle.ret.length ? `<p class="muted" style="margin:0;font-size:.85rem">Sem ganhador, <b style="color:var(--o)">voltaram</b> para quem pagou: ${V.settle.ret.map(c => potName(c.k) + " (" + c.amt + " f)").join(", ")}.</p>` : ""}
     ${V.settle.carry && V.settle.carry.length ? `<p class="muted" style="margin:0;font-size:.85rem">Sem ganhador, <b style="color:var(--o)">acumulam</b> para a próxima rodada: ${V.settle.carry.map(c => potName(c.k) + " (" + c.amt + " f)").join(", ")}. Só paga de novo quem ainda não pagou.</p>` : ""}
     ${V.settle.back && V.settle.back.length ? `<p class="muted" style="margin:0;font-size:.85rem">Rodada cancelada: a Batida voltou para os jogadores.</p>` : ""}
   </section>` : ""}
