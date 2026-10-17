@@ -628,6 +628,7 @@ const remember = (s, id, nick) => { s.names = s.names || {}; s.names[id] = nick;
 function ensureChips(s, id){ s.chips = s.chips || {}; if (s.chips[id] == null) s.chips[id] = s.startChips || 0; }
 function fail(msg){ throw new Error(msg); }
 function deal(s){
+  const primeira = s.status === "draft";       // veio do sorteio: 1ª rodada do jogo
   if (s.pots && !s.settled) settle(s, null);
   const out = eliminateBroke(s, 2 * Math.pow(2, clockCycles(s)));
   if (out.length) { s.clockAcc = 0; s.clockRun = null; s.lastCycle = 0; }   // alguém saiu sem fichas: o relógio recomeça
@@ -644,16 +645,22 @@ function deal(s){
   s.first = true; s.canSwap = false; s.claim = null; s.burned = {}; s.drawnFrom = null;
   s.turnAt = Date.now(); s.draft = null;
   s.hist = [];
-  s.choosing = true; s.chosen = null; s.initialOpen = false; s.openUntil = 0; s.lockUntil = 0; s.openedOnce = false;
+  s.initialOpen = false; s.openUntil = 0; s.lockUntil = 0; s.openedOnce = false;
   s.acks = {}; s.haltAt = null;
-  // 1ª rodada: quem começa escolhe a carta; depois, quem bateu a rodada anterior
-  s.chooser = s.lastWinner && pIdx(s, s.lastWinner) >= 0 ? s.lastWinner : s.players[s.turn].id;
+  // Escolhida: na 1ª rodada escolhe quem tirou a maior carta no sorteio (quem começa);
+  // depois, quem fez a Escolhida na rodada anterior. Se ninguém fez, a carta se mantém.
+  const fez = !primeira && s.prizes && s.prizes.escolhida && s.prizes.escolhida.winner;
+  if (primeira || !s.chosen) { s.choosing = true; s.chosen = null; s.chooser = s.players[s.turn].id; }
+  else if (fez && pIdx(s, fez) >= 0) { s.choosing = true; s.chosen = null; s.chooser = fez; }
+  else { s.choosing = false; s.chooser = null; s.escKept = fez ? "saiu" : "ninguem"; }
+  if (s.choosing) s.escKept = null;
   s.prizes = {}; PRIZES.forEach(p => s.prizes[p.k] = {winner: null, cands: []});
   setupPots(s);
   out.forEach(o => s.hist.push({p:o.id, a:"e", amt:o.rest, share:o.share}));
   s.notice = out.length ? elimText(s, out) : null;
   s.round = (s.round || 0) + 1;
-  s.log = (s.notice ? s.notice + " " : "") + "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas.";
+  s.log = (s.notice ? s.notice + " " : "") + "Rodada " + s.round + ": " + nickOf(s, s.players[s.dealer].id) + " deu as cartas." + (s.choosing ? "" : (s.escKept === "saiu" ? " Quem fez a Escolhida saiu da mesa" : " Ninguém fez a Escolhida") + ": continua " + cardName(s.chosen + "0") + ".");
+  maybeOpen(s);
 }
 /* ---------- fichas e montes ---------- */
 const OPEN_MS = window.__openMs || 20000;   // prêmios de mão antes da primeira compra (20 s)
@@ -1849,7 +1856,7 @@ function rulesPanel(){
       <li>Na primeira rodada, cada um escolhe uma carta virada: <b>a maior começa comprando</b> (só cartas de Ás a 10: Ás é a menor e 10 a maior; empate escolhe de novo). Depois, <b>quem bateu dá as cartas</b> da rodada seguinte.</li>
       <li>2 baralhos, <b>9 cartas</b> para cada um. O jogo começa <b>sem lixo</b>.</li>
       <li>Uma carta é virada: a <b>vira</b>. São <b>coringas</b> a outra cópia da vira e a carta seguinte do mesmo naipe (vira 5♥ → coringas 5♥ e 6♥; vira K♠ → K♠ e A♠).</li>
-      <li>A carta <b>Escolhida</b> é definida por quem começa na 1ª rodada e, nas seguintes, por quem bateu a rodada anterior.</li>
+      <li>A carta <b>Escolhida</b> é definida na 1ª rodada por quem tirou a maior carta no sorteio e, nas seguintes, por quem fez a Escolhida na rodada anterior. Se ninguém fizer a Escolhida, a mesma carta continua valendo.</li>
       <li>Na primeira jogada da rodada, quem começa compra do monte. Se não quiser a carta, pode <b>descartá-la e comprar outra</b>.</li>
       <li>Depois, na sua vez, compre do <b>monte</b> ou pegue a carta de cima do <b>lixo</b>, e descarte uma.</li>
       <li>Para <b>bater</b>, logo depois de comprar, as 10 cartas precisam formar <b>3 + 3 + 4</b>. Vale bater com a carta do lixo.</li>
