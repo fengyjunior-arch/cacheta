@@ -359,6 +359,9 @@ const cardName = c => rlabel(rk(c)) + SYM[st(c)];
 // Coringas: a outra cópia da vira e a carta seguinte do mesmo naipe (as duas cópias).
 const jokersFor = vira => [rk(vira) + st(vira), nextRank(rk(vira)) + st(vira)];
 const isJ = (c, J) => J.includes(c.slice(0,2));
+// último lance de jogo, pulando avisos (tempo, batida errada, prêmios de mão, saída) que não mexem nas cartas
+const META_EV = ["tempo", "q", "pg", "x"];
+function lastPlay(hist){ for (let i = (hist ? hist.length : 0) - 1; i >= 0; i--) if (!META_EV.includes(hist[i].a)) return hist[i]; return null; }
 function rnd(n){ const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=rnd(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function newDeck(){ const d=[]; for(const cp of [1,2]) for(const s of SUITS) for(const r of RANKS) d.push(r+s+cp); return shuffle(d); }
@@ -1203,17 +1206,23 @@ function apply(pid, m){
         s.log = nickOf(s, pid) + " bateu!";
         break;
       }
-      const last = s.hist && s.hist[s.hist.length-1];
+      const last = lastPlay(s.hist);
       const fresh = s.phase === "draw" && s.discard.length && last && last.a === "d" && last.p !== pid;
       if (fresh && s.hands[pid].length === 9 && findBatida(s.hands[pid].concat(s.discard[s.discard.length-1]), s.jokers)) {
         if (queimado) fail("Você bateu errado antes: nesta rodada não pode mais bater com carta do lixo.");
         return apply(pid, {a:"baterLixo"});
       }
+      // a carta do lixo fecharia a batida, mas já não dá para pegá-la: avisa em vez de queimar
+      const topo = s.discard && s.discard[s.discard.length-1];
+      if (topo && s.hands[pid].length === 9 && findBatida(s.hands[pid].concat(topo), s.jokers)) {
+        if (last && last.a === "d" && last.p === pid) fail("Você não pode bater com a carta que você mesmo descartou.");
+        fail("Tarde demais: o próximo jogador já comprou, essa carta do lixo não vale mais.");
+      }
       burn(s, pid);
       break;
     }
     case "baterLixo": {
-      const last = s.hist && s.hist[s.hist.length-1];
+      const last = lastPlay(s.hist);
       if (s.status !== "playing" || s.phase !== "draw" || !s.discard.length || !last || last.a !== "d") fail("Não dá para bater com o lixo agora.");
       if (last.p === pid) fail("Você não pode bater com a carta que você mesmo descartou.");
       if (s.burned && s.burned[pid]) fail("Você bateu errado antes: nesta rodada não pode mais bater com carta do lixo.");
@@ -1232,7 +1241,7 @@ function apply(pid, m){
 /* ---------- batida com o lixo: preferência para quem vem antes na rodada ---------- */
 const CLAIM_MS = window.__claimMs || 3000;
 let claimTimer = null;
-const lastDiscarder = s => { const e = s.hist && s.hist[s.hist.length-1]; return e && e.a === "d" ? e.p : null; };
+const lastDiscarder = s => { const e = lastPlay(s.hist); return e && e.a === "d" ? e.p : null; };
 function orderDist(s, id, from){ const n = s.players.length; return (pIdx(s, id) - pIdx(s, from) + n) % n; }
 function canBaterLixo(s, id){
   const top = s.discard && s.discard[s.discard.length-1];
@@ -1983,7 +1992,7 @@ function renderGame(){
   const espera = V.initialOpen || locked() || V.halt;
   const canDraw = mine && V.phase === "draw" && !V.claim && !espera;
   const bat = mine && V.phase === "discard" ? findBatida(V.hand, Jk) : null;
-  const lastEv = V.hist && V.hist[V.hist.length-1];
+  const lastEv = lastPlay(V.hist);
   const freshTop = V.phase === "draw" && V.top && lastEv && lastEv.a === "d" && lastEv.c === V.top;
   const iBurned = (V.burned || []).includes(V.me);
   const canFora = meIn && !iBurned && freshTop && lastEv.p !== V.me && V.hand.length === 9 && !!findBatida(V.hand.concat(V.top), Jk);
